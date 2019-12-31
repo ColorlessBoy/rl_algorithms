@@ -1,8 +1,10 @@
 import numpy as np
 import torch
-from torch.optim import Adam
 import torch.nn.functional as F
-from models import GaussianPolicy, Value
+from torch.distributions import kl_divergence
+from torch.optim import Adam
+
+from models import GaussianPolicy, ValueNetwork
 
 def get_flat_params_from(model):
     params = []
@@ -21,117 +23,135 @@ def set_flat_params_to(model, flat_params):
         prev_ind += flat_size
 
 class trpo(object):
-    def __init__(self, input_size, action_space, args, activation, output_activation):
+    def __init__(self, input_size, action_space, args, activation=torch.tanh, output_activation=None):
         self.gamma = args.gamma
         self.tau = args.tau
         self.damping = args.damping
         self.delta = args.delta
         self.device = torch.device("cuda" if args.cuda else "cpu")
         self.actor = GaussianPolicy(input_size, 
-                                    action_space.shape[-1], 
+                                    action_space,
                                     args.hidden_size, 
                                     activation=activation,
-                                    output_activation=output_activation)
-        self.critic = Value(input_size, 
-                            args.hidden_size, 
-                            activation=activation,
-                            output_activation=output_activation)
+                                    output_activation=output_activation).to(self.device)
+        self.critic = ValueNetwork(input_size, 
+                                    args.hidden_size, 
+                                    activation=activation,
+                                    output_activation=output_activation).to(self.device)
         self.critic_optim = Adam(self.critic.parameters(), args.lr)
 
-    def getGAE(self, reward, value, gamma, tau):
-        # (batch_size, shape)
-        delta = reward[:, :-1] + gamma * value[:, 1:] - value[:, :-1]
-        print("delta = ", delta)
-        advantage = reward.clone()
-        for i in reversed(range(delta.shape[-1])):
-            advantage[0, i] = delta[0, i] + gamma * tau * advantage[0, i+1]    
-        return (advantage - advantage.mean())/advantage.std()
+    def getGAE(self, state, reward, mask):
+        with torch.no_grad():
+            value = self.critic(state)
+            returns = torch.zeros_like(reward)
+            delta = torch.zeros_like(reward)
+            advantage = torch.zeros_like(reward)
+
+            prev_return = 0
+            prev_value = 0
+            prev_advantage = 0
+            for i in reversed(range(reward.size(0))):
+                returns[i] = reward[i] + self.gamma * prev_return * mask[i]
+                delta[i] = reward[i] + self.gamma * prev_value * mask[i] - value.data[i]
+                advantage[i] = delta[i] + self.gamma * self.tau * prev_advantage * mask[i]
+
+                prev_return = returns[i, 0]
+                prev_value = value.data[i, 0]
+                prev_advantage = advantage[i, 0]
+        return returns, (advantage - advantage.mean())/advantage.std()
 
     def get_policy_loss(self, advantage, logp_a, logp_a_prev):
-        return -advantage * torch.exp(logp_a - logp_a_prev)
-    
-    def get_gaussian_kl(self, mu, std, mu_old, std_old):
-        # return KL(pi_old || pi)
-        # p ~ N(mu_1, std_1)
-        # q ~ N(mu_2, std_2)
-        # KL(p || q) = log(std_2 / std_1) + (var_1 + (mu_1 - mu_2)**2) - 1) / (2 * var_2)
-        var, var_old = std**2, std_old**2
-        kl = std.log() - std_old.log() + (var_old + (mu - mu_old)**2 - 1) / (2 * var)
-        return kl.sum(axis=1).mean()
-    
-    def get_Hx(self, x):
-        grads = torch.autograd.grad(self.kl_loss, self.actor.parameters(), create_graph=True)
-        flat_grad = torch.cat([grad.view(-1) for grad in grads])
-        grad_grads = torch.autograd.grad(flat_grad @ x, self.actor.parameters())
-        flat_grad_grad = torch.cat([grad_grad.contiguous().view(-1) for grad_grad in grad_grads]).data
-        return flat_grad_grad + x * self.damping
+        return -(advantage * torch.exp(logp_a - logp_a_prev)).mean()
 
-    def cg(self, A, b, iters, accuracy=1e-10):
+    def get_kl_loss(self, state):
+        pi = self.actor(state)
+        kl_loss = torch.mean(kl_divergence(self.pi_old, pi))
+        return kl_loss
+
+    def cg(self, A, b, iters=10, accuracy=1e-10):
         # A is a function: x ==> A(s) = A @ x
         x = torch.zeros_like(b)
         d = b.clone()
-        g = -b
-        g_dot_g_old = 1
+        g = -b.clone()
+        g_dot_g_old = torch.tensor(1.)
         for _ in range(iters):
-            g_dot_g = np.dot(g, g)
+            g_dot_g = torch.dot(g, g)
             d = -g + g_dot_g / g_dot_g_old * d
-            alpha = g_dot_g / torch.dot(d, A(d))
+            print(d)
+            Ad = A(d)
+            alpha = g_dot_g / torch.dot(d, Ad)
             x += alpha * d
             if g_dot_g < accuracy:
                 break
             g_dot_g_old = g_dot_g
-            g = A(x) - b
+            g += alpha * Ad
         return x
     
-    def parameters(self, memory):
-        state, action, reward, next_state = memory.sample()
+    def linesearch(self, state, action, advantage, fullstep, steps=10):
+        prev_params = get_flat_params_from(self.actor)
+        # Line search:
+        alpha = 1
+        for i in range(steps):
+            alpha *= 0.5
+            new_params = prev_params + alpha * fullstep
+            set_flat_params_to(self.actor, new_params)
+            kl_loss = self.get_kl_loss(state)
+            log_prob_action = self.actor.get_log_prob_action(state, action)
+            policy_loss = self.get_policy_loss(advantage, log_prob_action, self.log_prob_action_old)
+            if policy_loss < self.policy_loss and kl_loss < self.delta:
+                return True, i
+        set_flat_params_to(self.actor, prev_params)
+        return False, steps
+    
+    def select_action(self, state):
+        state = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+        return self.actor.sample(state).detach().cpu().numpy()[0]
+    
+    def update_parameters(self, memory):
+        state, action, reward, next_state, mask = memory.sample()
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
         next_state = torch.FloatTensor(next_state).to(self.device)
-        self.update_actor(state, action, reward, next_state)
-        self.update_critic(state, action, reward, next_state)
+        mask = torch.FloatTensor(mask).to(self.device).unsqueeze(1)
 
-    def update_actor(self, state, action, reward, next_state):
+        returns, advantage = self.getGAE(state, reward, mask)
+
+        self.update_actor(state, action, advantage)
+        self.update_critic(state, returns)
+
+    def update_actor(self, state, action, advantage):
         value = self.critic(state)        
-        advantage = self.getGAE(reward, value, self.gamma, self.tau)
-
-        # Just for GaussianPolicy
-        policy_mean, policy_std = self.actor(state)
-        log_prob_action = self.actor.get_log_prob_action(action, policy_mean, policy_std)
-        log_prob_action_old = log_prob_action.clone().detach()
-        self.policy_loss = self.get_policy_loss(advantage, log_prob_action, log_prob_action_old)
+        log_prob_action = self.actor.get_log_prob_action(state, action)
+        self.log_prob_action_old = log_prob_action.clone().detach()
+        self.policy_loss = self.get_policy_loss(advantage, log_prob_action, self.log_prob_action_old)
 
         grads = torch.autograd.grad(self.policy_loss, self.actor.parameters())
         loss_grad = torch.cat([grad.view(-1) for grad in grads]).data
 
-        policy_mean_old = policy_mean.clone().detach()
-        policy_std_old = policy_std.clone().detach()
-        self.kl_loss = self.get_gaussian_kl(policy_mean, policy_std, policy_mean_old, policy_std_old)
-        
-        invHg = self.cg(self.get_Hx, loss_grad, 10)
+        def get_Hx(x):
+            kl_loss = self.get_kl_loss(state)
+            grads = torch.autograd.grad(kl_loss, self.actor.parameters(), create_graph=True)
+            flat_grad = torch.cat([grad.view(-1) for grad in grads])
+            grad_grads = torch.autograd.grad(flat_grad @ x, self.actor.parameters())
+            flat_grad_grad = torch.cat([grad_grad.contiguous().view(-1) for grad_grad in grad_grads]).data
+            return flat_grad_grad + x * self.damping
+
+        with torch.no_grad():
+            self.pi_old = self.actor(state)
+        invHg = self.cg(get_Hx, loss_grad, 10)
         lm = torch.sqrt(0.5 * loss_grad @ invHg / self.delta)
         fullstep = invHg / lm
 
-        prev_params = get_flat_params_from(self.actor)
-        # Line search:
-        alpha = 1
-        for _ in range(10):
-            alpha = 0.5 * alpha
-            new_params = prev_params + alpha * fullstep
-            set_flat_params_to(self.actor, new_params)
-            policy_mean, policy_std = self.actor(state)
-            log_prob_action = self.actor.get_log_prob_action(action, policy_mean, policy_std)
-            kl_loss = self.get_gaussian_kl(policy_mean, policy_std, policy_mean_old, policy_std_old)
-            policy_loss = self.get_policy_loss(advantage, log_prob_action, log_prob_action_old)
-            if policy_loss < self.policy_loss and kl_loss < self.delta:
-                break
+        flag, step = self.linesearch(state, action, advantage, fullstep)
+        if flag:
+            print("linesearch successes at step {}".format(step))
+        else:
+            print("linesearch failed")
 
-    def update_critic(self, state, action, reward, next_state):
-        value = self.critic(state)        
-        target_value = reward.clone()
-        target_value[:, :-1] += self.gamma * value[:, 1:] - value[:, :-1] 
-        value_loss = F.mse(value, target_value)
+    def update_critic(self, state, target_value):
+        value = self.critic(state)
+        value_loss = F.mse_loss(value, target_value)
         self.critic_optim.zero_grad()
         value_loss.backward()
         self.critic_optim.step()
