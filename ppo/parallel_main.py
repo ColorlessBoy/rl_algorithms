@@ -139,8 +139,11 @@ def run(rank, size, args):
     for episode in range(1, args.episodes+1):
         episode_reward, samples = env_sampler(get_action, args.batch_size)
         actor_loss, value_loss = alg.update(*samples)
+        print()
+        print('Rank{}: actor.parameter'.format(rank), list(actor.parameters())[0])
+        print()
+        print('Rank{}: critic.parameter'.format(rank),list(critic.parameters())[0])
         yield episode*args.batch_size, episode_reward, actor_loss, value_loss
-
 Args = namedtuple('Args',
                 ('alg_name',
                 'env_name', 
@@ -159,14 +162,14 @@ Args = namedtuple('Args',
                 'pi_lr',
                 'value_lr'))
 
-def multi_run(rank, size, fn, args, backend='gloo'):
+def parallel_run(rank, size, fn, args, backend='gloo'):
     """ Initialize the distributed environment. """
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=rank, world_size=size)
 
     logdir = "./logs/algo_{}/env_{}/worker{}".format(args.alg_name, args.env_name, rank)
-    file_name = 'seed{}_time{}.csv'.format(args.seed+rank, time())
+    file_name = 'seed{}_time{}.csv'.format(args.seed, time())
     if not os.path.exists(logdir):
         os.makedirs(logdir)
     full_name = os.path.join(logdir, file_name)
@@ -182,15 +185,26 @@ def multi_run(rank, size, fn, args, backend='gloo'):
     csvfile.close()
 
 if __name__ == "__main__":
-    size = 8
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run experiment with optional args')
+    parser.add_argument('--seed', type=int, default=1, metavar='N',
+                        help='random seed (default: 1)')
+    parser.add_argument('--agent', type=int, default=8, metavar='N',
+                        help='number of agents (default: 10)')
+    parser.add_argument('--alg', default="local_ppo", metavar='G',
+                        help='name of the algorithm to run')
+    args = parser.parse_args()
+
+    size = args.agent
     processes = []
     start_time = time()
     seed = 0
     for rank in range(size):
-        alg_args = Args('global_ppo',   # alg_name
+        alg_args = Args(args.alg,       # alg_name
                     'HalfCheetah-v2',   # env_name
                     'cuda:0',           # device
-                    seed,               # seed
+                    seed+size-rank-1,   # seed
                     (64, 64),           # hidden_sizes
                     2000,               # episodes
                     1000,               # max_episode_step
@@ -203,7 +217,7 @@ if __name__ == "__main__":
                     80,                 # value_steps_per_update
                     3e-4,               # pi_lr
                     1e-3)               # value_lr
-        p = Process(target=multi_run, args=(rank, size, run, alg_args, 'nccl'))
+        p = Process(target=parallel_run, args=(rank, size, run, alg_args, 'nccl'))
         p.start()
         processes.append(p)
 

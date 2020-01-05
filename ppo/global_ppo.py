@@ -21,15 +21,23 @@ class GlobalPPO(PPO):
                                         tau, pi_steps_per_update, 
                                         value_steps_per_update, 
                                         target_kl, device, pi_lr, v_lr)
+        self.synchronous_parameters(self.actor)
+        self.synchronous_parameters(self.critic)
 
-    def average_variables(self, variables):
-        size = float(dist.get_world_size())
+    def average_variables(self, variables, size=None):
+        if size == None:
+            size = float(dist.get_world_size())
         dist.all_reduce(variables, op=dist.ReduceOp.SUM)
         variables /= size
 
     def average_parameters_grad(self, model):
+        size = float(dist.get_world_size())
         for param in model.parameters():
-            self.average_variables(param.grad.data)
+            self.average_variables(param.grad.data, size)
+    
+    def synchronous_parameters(self, model):
+        for param in model.parameters():
+            dist.broadcast(param, src=0)
     
     def update_actor(self, state, action, advantage):
         #update actor network

@@ -19,6 +19,8 @@ class LocalPPO(PPO):
                                         tau, pi_steps_per_update, 
                                         value_steps_per_update, 
                                         target_kl, device, pi_lr, v_lr)
+        self.synchronous_parameters(self.actor)
+        self.synchronous_parameters(self.critic)
 
     def update(self, state, action, reward, next_state, mask):
         actor_loss, value_loss = super(LocalPPO, self).update(state, action, reward, next_state, mask)
@@ -32,3 +34,6 @@ class LocalPPO(PPO):
             dist.all_reduce(param.data, op=dist.ReduceOp.SUM)
             param.data /= size
     
+    def synchronous_parameters(self, model):
+        for param in model.parameters():
+            dist.broadcast(param, src=0)
