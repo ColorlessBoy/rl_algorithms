@@ -52,43 +52,51 @@ class PPO(object):
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
-        next_state = torch.FloatTensor(next_state).to(self.device)
+        # next_state = torch.FloatTensor(next_state).to(self.device)
         mask = torch.FloatTensor(mask).to(self.device).unsqueeze(1)
 
         # Get generalized advantage estimation
         # and get target value
         target_value, advantage = self.getGAE(state, reward, mask)
+        actor_loss = self.update_actor(state, action, advantage)
+        critic_loss = self.update_critic(state, target_value)
+        return actor_loss, critic_loss
         
+    def update_actor(self, state, action, advantage):
         #update actor network
         old_pi = self.actor.get_detach_pi(state)
         log_action_probs = self.actor.get_log_prob(state, action)
         old_log_action_probs = log_action_probs.clone().detach()
+        actor_loss = 0.0
         
         for i in range(self.pi_steps_per_update):
             ratio = torch.exp(log_action_probs - old_log_action_probs)
             ratio2 = ratio.clamp(1 - self.clip, 1 + self.clip)
-            action_loss = -torch.min(ratio * advantage, ratio2 * advantage).mean()
+            actor_loss = -torch.min(ratio * advantage, ratio2 * advantage).mean()
             
             self.actor_optim.zero_grad()
-            action_loss.backward()
+            actor_loss.backward()
             self.actor_optim.step()
 
             pi = self.actor.get_detach_pi(state)
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
-            if kl > self.target_kl: # I don't know why 1.5, either.
-                print("Early stopping at step {} due to reaching max kl".format(i))
+            if kl > self.target_kl:
                 break
 
             log_action_probs = self.actor.get_log_prob(state, action)
+            print("Pi update one step.")
         
+        return actor_loss
+    
+    def update_critic(self, state, target_value):
         # update critic network
+        critic_loss = 0.0
         for _ in range(self.value_steps_per_update):
             value = self.critic(state)
-            value_loss = F.mse_loss(value, target_value)
+            critic_loss = F.mse_loss(value, target_value)
             self.critic_optim.zero_grad()
-            value_loss.backward()
+            critic_loss.backward()
             self.critic_optim.step()
-
-        return action_loss, value_loss
+        return critic_loss
         
 
