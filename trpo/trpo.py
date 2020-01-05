@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.distributions import kl_divergence
@@ -90,7 +89,6 @@ class TRPO(object):
             g += alpha * Ad
         return x
     
-    # Unchecked.
     def linesearch(self, state, action, advantage, fullstep, steps=10):
         with torch.no_grad():
             actor_loss = 0.0
@@ -113,7 +111,7 @@ class TRPO(object):
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
         reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
-        next_state = torch.FloatTensor(next_state).to(self.device)
+        # next_state = torch.FloatTensor(next_state).to(self.device)
         mask = torch.FloatTensor(mask).to(self.device).unsqueeze(1)
 
         value_target, advantage = self.getGAE(state, reward, mask)
