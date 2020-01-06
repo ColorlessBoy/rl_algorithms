@@ -161,7 +161,6 @@ Args = namedtuple('Args',
 
 def parallel_run(start_time, rank, size, fn, args, backend='gloo'):
     """ Initialize the distributed environment. """
-    print(backend)
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=rank, world_size=size)
@@ -196,16 +195,24 @@ if __name__ == "__main__":
                         help='name of environment to run (default: HalfCheetah-v2)')
     parser.add_argument('--batch', type=int, default=1000, metavar='N',
                         help='number of batch size (default: 1000)')
+    parser.add_argument('--device', default="cpu", metavar='G',
+                        help='device (default: cpu)')
     args = parser.parse_args()
 
-    size = args.agent
     processes = []
     start_time = time()
-    seed = 0
+
+    seed = args.seed 
+    size = args.agent
+
+    backend = 'gloo' if args.device == 'cpu' else 'nccl'
+    n_device = torch.cuda.device_count()
+
     for rank in range(size):
+        device = 'cpu' if args.device == 'cpu' else 'cuda:{}'.format(rank % n_device)
         alg_args = Args(args.alg,       # alg_name
                     args.env_name,      # env_name
-                    'cuda:0',           # device
+                    device,             # device
                     seed+rank,          # seed
                     (64, 64),           # hidden_sizes
                     2000,               # episodes
@@ -227,4 +234,5 @@ if __name__ == "__main__":
         p.join() # wait all process stop.
 
     end_time = time()
+
     print("Total time: {}".format(end_time - start_time))

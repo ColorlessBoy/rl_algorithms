@@ -59,8 +59,6 @@ class PPO(object):
         # Get generalized advantage estimation
         # and get target value
         target_value, advantage = self.getGAE(state, reward, mask) # On CPU
-        print(target_value)
-        print(advantage)
         actor_loss = self.update_actor(state, action, advantage.to(self.device))
         critic_loss = self.update_critic(state, target_value.to(self.device))
         return actor_loss, critic_loss
