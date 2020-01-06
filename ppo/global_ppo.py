@@ -24,16 +24,18 @@ class GlobalPPO(PPO):
         self.synchronous_parameters(self.actor)
         self.synchronous_parameters(self.critic)
 
-    def average_variables(self, variables, size=None):
-        if size == None:
-            size = float(dist.get_world_size())
+    def average_variables(self, variables):
+        size = float(dist.get_world_size())
         dist.all_reduce(variables, op=dist.ReduceOp.SUM)
         variables /= size
 
     def average_parameters_grad(self, model):
         size = float(dist.get_world_size())
+        rank = dist.get_rank()
         for param in model.parameters():
-            self.average_variables(param.grad.data, size)
+            dist.reduce(param.grad.data, dst=0)
+            if rank == 0:
+                param.grad.data /= size
     
     def synchronous_parameters(self, model):
         for param in model.parameters():
@@ -51,15 +53,17 @@ class GlobalPPO(PPO):
             ratio2 = ratio.clamp(1 - self.clip, 1 + self.clip)
             actor_loss = -torch.min(ratio * advantage, ratio2 * advantage).mean()
             
+            rank = dist.get_rank()
             self.actor_optim.zero_grad()
             actor_loss.backward()
             self.average_parameters_grad(self.actor)
-            self.actor_optim.step()
+            if rank == 0:
+                self.actor_optim.step()
+            self.synchronous_parameters(self.actor)
 
             pi = self.actor.get_detach_pi(state)
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
             self.average_variables(kl)
-
             if kl > self.target_kl:
                 break
 
@@ -70,6 +74,7 @@ class GlobalPPO(PPO):
     
     def update_critic(self, state, target_value):
         # update critic network
+        rank = dist.get_rank()
         critic_loss = 0.0
         for _ in range(self.value_steps_per_update):
             value = self.critic(state)
@@ -77,5 +82,7 @@ class GlobalPPO(PPO):
             self.critic_optim.zero_grad()
             critic_loss.backward()
             self.average_parameters_grad(self.critic)
-            self.critic_optim.step()
+            if rank == 0:
+                self.critic_optim.step()
+            self.synchronous_parameters(self.critic)
         return critic_loss

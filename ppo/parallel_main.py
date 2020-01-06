@@ -139,11 +139,8 @@ def run(rank, size, args):
     for episode in range(1, args.episodes+1):
         episode_reward, samples = env_sampler(get_action, args.batch_size)
         actor_loss, value_loss = alg.update(*samples)
-        print()
-        print('Rank{}: actor.parameter'.format(rank), list(actor.parameters())[0])
-        print()
-        print('Rank{}: critic.parameter'.format(rank),list(critic.parameters())[0])
         yield episode*args.batch_size, episode_reward, actor_loss, value_loss
+
 Args = namedtuple('Args',
                 ('alg_name',
                 'env_name', 
@@ -204,7 +201,7 @@ if __name__ == "__main__":
         alg_args = Args(args.alg,       # alg_name
                     'HalfCheetah-v2',   # env_name
                     'cuda:0',           # device
-                    seed+size-rank-1,   # seed
+                    seed+rank,          # seed
                     (64, 64),           # hidden_sizes
                     2000,               # episodes
                     1000,               # max_episode_step
