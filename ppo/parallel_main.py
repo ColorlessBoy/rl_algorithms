@@ -89,7 +89,9 @@ class EnvSampler(object):
 # 15. value_lr (default = 1e-3)
 def run(rank, size, args):
     env = gym.make(args.env_name)
-    device = torch.device(args.device)
+    if args.device == 'cuda':
+        device = 'cuda:{}'.format(rank % torch.cuda.device_count())
+    device = torch.device(device)
 
     # 1.Set some necessary seed.
     torch.manual_seed(args.seed+rank)
@@ -161,7 +163,6 @@ Args = namedtuple('Args',
 
 def parallel_run(start_time, rank, size, fn, args, backend='gloo'):
     """ Initialize the distributed environment. """
-    print(backend)
     os.environ['MASTER_ADDR'] = '127.0.0.1'
     os.environ['MASTER_PORT'] = '29500'
     dist.init_process_group(backend, rank=rank, world_size=size)
@@ -194,6 +195,8 @@ if __name__ == "__main__":
                         help='name of environment to run (default: HalfCheetah-v2)')
     parser.add_argument('--batch', type=int, default=1000, metavar='N',
                         help='number of batch size (default: 1000)')
+    parser.add_argument('--device', default='cpu', metavar='G',
+                        help='device (default: cpu)')
     args = parser.parse_args()
 
     logdir = "./logs/algo_{}/env_{}/workers{}".format(args.alg, args.env_name, args.agent)
@@ -204,10 +207,11 @@ if __name__ == "__main__":
     processes = []
     start_time = time()
     seed = 0
+    backend = 'gloo' if args.device == 'cpu' else 'nccl'
     for rank in range(size):
         alg_args = Args(args.alg,       # alg_name
                     args.env_name,      # env_name
-                    'cuda:0',           # device
+                    args.device,        # device
                     seed+rank,          # seed
                     (64, 64),           # hidden_sizes
                     2000,               # episodes
@@ -221,7 +225,7 @@ if __name__ == "__main__":
                     80,                 # value_steps_per_update
                     3e-4,               # pi_lr
                     1e-3)               # value_lr
-        p = Process(target=parallel_run, args=(start_time, rank, size, run, alg_args, 'nccl'))
+        p = Process(target=parallel_run, args=(start_time, rank, size, run, alg_args, backend))
         p.start()
         processes.append(p)
 
