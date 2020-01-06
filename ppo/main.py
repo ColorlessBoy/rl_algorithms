@@ -153,16 +153,18 @@ if __name__ == "__main__":
                         help='number of batch size (default: 1000)')
     parser.add_argument('--env_name', default='HalfCheetah-v2', metavar='G',
                         help='name of environment name (default: HalfCheetah-v2)')
+    parser.add_argument('--device', default='cpu', metavar='G',
+                        help='device (default cpu)')
     
     args = parser.parse_args()
 
-    alg_args = Args(args.env_name,   # env_name
-                'cuda:0',           # device
+    alg_args = Args(args.env_name,  # env_name
+                args.device,        # device
                 args.seed,          # seed
                 (64, 64),           # hidden_sizes
                 1000,               # episodes
                 1000,               # max_episode_step
-                args.batch,    # batch_size
+                args.batch,         # batch_size
                 0.99,               # gamma
                 0.97,               # tau
                 0.2,                # clip

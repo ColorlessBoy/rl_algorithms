@@ -168,8 +168,6 @@ def parallel_run(start_time, rank, size, fn, args, backend='gloo'):
 
     logdir = "./logs/algo_{}/env_{}/workers{}".format(args.alg_name, args.env_name, size)
     file_name = 'worker{}_seed{}_time{}.csv'.format(rank, args.seed, start_time)
-    if not os.path.exists(logdir):
-        os.makedirs(logdir)
     full_name = os.path.join(logdir, file_name)
 
     csvfile = open(full_name, 'w')
@@ -197,6 +195,10 @@ if __name__ == "__main__":
     parser.add_argument('--batch', type=int, default=1000, metavar='N',
                         help='number of batch size (default: 1000)')
     args = parser.parse_args()
+
+    logdir = "./logs/algo_{}/env_{}/workers{}".format(args.alg, args.env_name, args.agent)
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
 
     size = args.agent
     processes = []
