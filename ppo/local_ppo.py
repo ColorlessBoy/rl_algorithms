@@ -30,9 +30,12 @@ class LocalPPO(PPO):
 
     def average_parameters(self, model):
         size = float(dist.get_world_size())
+        rank = dist.get_rank()
         for param in model.parameters():
-            dist.all_reduce(param.data, op=dist.ReduceOp.SUM)
-            param.data /= size
+            dist.reduce(param.data, dst=0,  op=dist.ReduceOp.SUM)
+            if rank == 0:
+                param.data /= size
+            dist.broadcast(param.data, src=0)
     
     def synchronous_parameters(self, model):
         for param in model.parameters():

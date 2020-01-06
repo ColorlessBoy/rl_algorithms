@@ -1,6 +1,9 @@
 import gym
 import numpy as np
 import torch
+from time import time
+import os
+import csv
 
 from models import PolicyNetwork, ValueNetwork
 from ppo import PPO
@@ -121,32 +124,45 @@ def main(args):
     for episode in range(1, args.episodes+1):
         episode_reward, samples = env_sampler(get_action, args.batch_size)
         actor_loss, value_loss = ppo.update(*samples)
-        yield episode*args.batch_size, episode_reward, actor_loss, value_loss
+        yield episode*args.max_episode_step, episode_reward, actor_loss, value_loss
+
+Args = namedtuple('Args',
+            ('env_name', 
+                'device', 
+                'seed', 
+                'hidden_sizes', 
+                'episodes', 
+                'max_episode_step', 
+                'batch_size', 
+                'gamma', 
+                'tau', 
+                'clip', 
+                'target_kl',
+                'pi_steps_per_update',
+                'value_steps_per_update',
+                'pi_lr',
+                'value_lr'))
 
 if __name__ == "__main__":
-    Args = namedtuple('Args',
-                ('env_name', 
-                 'device', 
-                 'seed', 
-                 'hidden_sizes', 
-                 'episodes', 
-                 'max_episode_step', 
-                 'batch_size', 
-                 'gamma', 
-                 'tau', 
-                 'clip', 
-                 'target_kl',
-                 'pi_steps_per_update',
-                 'value_steps_per_update',
-                 'pi_lr',
-                 'value_lr'))
-    args = Args('HalfCheetah-v2',   # env_name
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Run experiment with optional args')
+    parser.add_argument('--seed', type=int, default=0, metavar='N',
+                        help='random seed (default: 0)')
+    parser.add_argument('--batch', type=int, default=1000, metavar='N',
+                        help='number of batch size (default: 1000)')
+    parser.add_argument('--env_name', default='HalfCheetah-v2', metavar='G',
+                        help='name of environment name (default: HalfCheetah-v2)')
+    
+    args = parser.parse_args()
+
+    alg_args = Args(args.env_name,   # env_name
                 'cuda:0',           # device
-                12345,              # seed
+                args.seed,          # seed
                 (64, 64),           # hidden_sizes
-                10000,              # episodes
+                1000,               # episodes
                 1000,               # max_episode_step
-                1000,               # batch_size
+                args.batch,    # batch_size
                 0.99,               # gamma
                 0.97,               # tau
                 0.2,                # clip
@@ -155,6 +171,19 @@ if __name__ == "__main__":
                 80,                 # value_steps_per_update
                 3e-4,               # pi_lr
                 1e-3)               # value_lr
-    for step, reward, actor_loss, value_loss in main(args):
-        reward = reward * args.max_episode_step / args.batch_size
+
+    logdir = "./logs/algo_ppo/env_{}".format(alg_args.env_name)
+    file_name = 'batch{}_seed{}_time{}.csv'.format(alg_args.batch_size, alg_args.seed, time())
+    if not os.path.exists(logdir):
+        os.makedirs(logdir)
+    full_name = os.path.join(logdir, file_name)
+
+    csvfile = open(full_name, 'w')
+    writer = csv.writer(csvfile)
+
+    begin_time = time()
+    for step, reward, actor_loss, value_loss in main(alg_args):
+        reward = reward * alg_args.max_episode_step / alg_args.batch_size
+        writer.writerow([step, reward])
         print('Step {}: Reward = {}, actor_loss = {}, value_loss = {}'.format(step, reward, actor_loss, value_loss))
+    print("Total time: {}".format(time() - begin_time))

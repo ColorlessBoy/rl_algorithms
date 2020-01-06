@@ -65,6 +65,7 @@ class GlobalPPO(PPO):
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
             self.average_variables(kl)
             if kl > self.target_kl:
+                print("Rank {}: Upto target_kl at Step {}".format(dist.get_rank(), i))
                 break
 
             log_action_probs = self.actor.get_log_prob(state, action)

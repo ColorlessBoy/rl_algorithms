@@ -21,16 +21,17 @@ class PPO(object):
         self.actor_optim = Adam(self.actor.parameters(), lr=pi_lr)
         self.critic_optim = Adam(self.critic.parameters(), lr=v_lr)
         self.clip = torch.tensor(clip, device=device)
-        self.gamma = torch.tensor(gamma, device=device)
-        self.tau = torch.tensor(tau, device=device)
+        self.gamma = torch.tensor(gamma)
+        self.tau = torch.tensor(tau)
         self.pi_steps_per_update = torch.tensor(pi_steps_per_update, device=device)
         self.value_steps_per_update = torch.tensor(value_steps_per_update, device=device)
         self.target_kl = torch.tensor(target_kl, device=device)
         self.device = device
     
     def getGAE(self, state, reward, mask):
+        # On CPU.
         with torch.no_grad():
-            value = self.critic(state)
+            value = self.critic(state).cpu()
             returns = torch.zeros_like(reward)
             delta = torch.zeros_like(reward)
             advantage = torch.zeros_like(reward)
@@ -51,15 +52,17 @@ class PPO(object):
     def update(self, state, action, reward, next_state, mask):
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
-        reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
+        reward = torch.FloatTensor(reward).unsqueeze(1) # cpu
         # next_state = torch.FloatTensor(next_state).to(self.device)
-        mask = torch.FloatTensor(mask).to(self.device).unsqueeze(1)
+        mask = torch.FloatTensor(mask).unsqueeze(1) # cpu
 
         # Get generalized advantage estimation
         # and get target value
-        target_value, advantage = self.getGAE(state, reward, mask)
-        actor_loss = self.update_actor(state, action, advantage)
-        critic_loss = self.update_critic(state, target_value)
+        target_value, advantage = self.getGAE(state, reward, mask) # On CPU
+        print(target_value)
+        print(advantage)
+        actor_loss = self.update_actor(state, action, advantage.to(self.device))
+        critic_loss = self.update_critic(state, target_value.to(self.device))
         return actor_loss, critic_loss
         
     def update_actor(self, state, action, advantage):
@@ -81,10 +84,10 @@ class PPO(object):
             pi = self.actor.get_detach_pi(state)
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
             if kl > self.target_kl:
+                print("Upto target_kl at Step {}".format(i))
                 break
 
             log_action_probs = self.actor.get_log_prob(state, action)
-            print("Pi update one step.")
         
         return actor_loss
     
