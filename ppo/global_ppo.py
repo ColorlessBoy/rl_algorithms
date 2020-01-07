@@ -1,4 +1,4 @@
-import torc
+import torch
 import torch.nn.functional as F
 from torch.distributions import kl_divergence
 import torch.distributed as dist

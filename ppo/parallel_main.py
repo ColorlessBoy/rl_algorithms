@@ -220,9 +220,9 @@ if __name__ == "__main__":
                     0.99,               # gamma
                     0.97,               # tau
                     0.2,                # clip
-                    0.02,               # target_kl
+                    0.015,               # target_kl
                     80,                 # pi_steps_per_update
-                    80,                 # value_steps_per_update
+                    50,                 # value_steps_per_update
                     3e-4,               # pi_lr
                     1e-3)               # value_lr
         p = Process(target=parallel_run, args=(start_time, rank, size, run, alg_args, backend))
