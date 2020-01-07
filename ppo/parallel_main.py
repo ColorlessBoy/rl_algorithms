@@ -90,8 +90,8 @@ class EnvSampler(object):
 def run(rank, size, args):
     env = gym.make(args.env_name)
     if args.device == 'cuda':
-        device = 'cuda:{}'.format(rank % torch.cuda.device_count())
-    device = torch.device(device)
+        args.device = 'cuda:{}'.format(rank % torch.cuda.device_count())
+    device = torch.device(args.device)
 
     # 1.Set some necessary seed.
     torch.manual_seed(args.seed+rank)
