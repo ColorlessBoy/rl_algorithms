@@ -2,6 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 from torch.distributions import Normal, kl_divergence
+from time import time
 
 class PPO(object):
     def __init__(self, 
@@ -30,6 +31,7 @@ class PPO(object):
     
     def getGAE(self, state, reward, mask):
         # On CPU.
+        start_time = time()
         with torch.no_grad():
             value = self.critic(state).cpu()
             returns = torch.zeros_like(reward)
@@ -47,6 +49,7 @@ class PPO(object):
                 prev_return = returns[i, 0]
                 prev_value = value[i, 0]
                 prev_advantage = advantage[i, 0]
+        print('The getGAE() uses {}s.'.format(time() - start_time))
         return returns, (advantage - advantage.mean())/advantage.std()
 
     def update(self, state, action, reward, next_state, mask):
@@ -64,6 +67,7 @@ class PPO(object):
         return actor_loss, critic_loss
         
     def update_actor(self, state, action, advantage):
+        start_time = time()
         #update actor network
         old_pi = self.actor.get_detach_pi(state)
         log_action_probs = self.actor.get_log_prob(state, action)
@@ -86,10 +90,11 @@ class PPO(object):
                 break
 
             log_action_probs = self.actor.get_log_prob(state, action)
-        
+        print('PPO updates actor by using {}s'.format(time() - start_time)) 
         return actor_loss
     
     def update_critic(self, state, target_value):
+        start_time = time()
         # update critic network
         critic_loss = 0.0
         for _ in range(self.value_steps_per_update):
@@ -98,6 +103,7 @@ class PPO(object):
             self.critic_optim.zero_grad()
             critic_loss.backward()
             self.critic_optim.step()
+        print('PPO updates critic by using {}s.'.format(time() - start_time))
         return critic_loss
         
 

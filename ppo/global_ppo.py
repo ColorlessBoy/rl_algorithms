@@ -1,8 +1,9 @@
-import torch
+import torc
 import torch.nn.functional as F
 from torch.distributions import kl_divergence
 import torch.distributed as dist
 from ppo import PPO
+from time import time
 
 class GlobalPPO(PPO):
     def __init__(self, 
@@ -43,6 +44,7 @@ class GlobalPPO(PPO):
     
     def update_actor(self, state, action, advantage):
         #update actor network
+        start_time = time()
         old_pi = self.actor.get_detach_pi(state)
         log_action_probs = self.actor.get_log_prob(state, action)
         old_log_action_probs = log_action_probs.clone().detach()
@@ -70,10 +72,12 @@ class GlobalPPO(PPO):
 
             log_action_probs = self.actor.get_log_prob(state, action)
         
+        print('Global ppo updates actor by using {}s.'.format(time() - start_time))
         return actor_loss
     
     
     def update_critic(self, state, target_value):
+        start_time = time()
         # update critic network
         rank = dist.get_rank()
         critic_loss = 0.0
@@ -86,4 +90,5 @@ class GlobalPPO(PPO):
             if rank == 0:
                 self.critic_optim.step()
             self.synchronous_parameters(self.critic)
+        print('Global ppo updates critic by using {}s'.format(time() - start_time))
         return critic_loss

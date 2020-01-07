@@ -1,6 +1,7 @@
 import torch
 import torch.distributed as dist
 from ppo import PPO
+from time import time
 
 class LocalPPO(PPO):
     def __init__(self, 
@@ -24,8 +25,10 @@ class LocalPPO(PPO):
 
     def update(self, state, action, reward, next_state, mask):
         actor_loss, value_loss = super(LocalPPO, self).update(state, action, reward, next_state, mask)
+        start_time = time()
         self.average_parameters(self.actor)
         self.average_parameters(self.critic)
+        print('Local ppo averages parameters by using {}s.'.format(time()-start_time))
         return actor_loss, value_loss
 
     def average_parameters(self, model):
