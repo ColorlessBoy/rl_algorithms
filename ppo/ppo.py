@@ -34,17 +34,21 @@ class PPO(object):
         start_time = time()
         with torch.no_grad():
             value = self.critic(state).cpu().squeeze()
-        returns = torch.zeros(len(reward))
-        delta = torch.zeros(len(reward))
-        advantage = torch.zeros(len(reward))
+            returns = torch.zeros(len(reward))
+            delta = torch.zeros(len(reward))
+            advantage = torch.zeros(len(reward))
 
-        prev_return = 0.0
-        prev_value = 0.0
-        prev_advantage = 0.0
-        for i in reversed(range(len(reward))):
-            prev_return    = returns[i]   = reward[i] + self.gamma * prev_return * mask[i]
-            prev_value     = delta[i]     = reward[i] + self.gamma * prev_value * mask[i] - value[i]
-            prev_advantage = advantage[i] = delta[i] + self.gamma * self.tau * prev_advantage * mask[i]
+            prev_return = 0.0
+            prev_value = 0.0
+            prev_advantage = 0.0
+            for i in reversed(range(len(reward))):
+                returns[i]   = reward[i] + self.gamma * prev_return * mask[i]
+                delta[i]     = reward[i] + self.gamma * prev_value * mask[i] - value[i]
+                advantage[i] = delta[i] + self.gamma * self.tau * prev_advantage * mask[i]
+                prev_return    = returns[i]  
+                prev_value     = value[i]    
+                prev_advantage = advantage[i]
+
         print('The getGAE() uses {}s.'.format(time() - start_time))
         return returns, (advantage - advantage.mean())/advantage.std()
 
@@ -58,15 +62,15 @@ class PPO(object):
         # Get generalized advantage estimation
         # and get target value
         target_value, advantage = self.getGAE(state, reward, mask) # On CPU
-        actor_loss = self.update_actor(state, action, advantage.to(self.device))
-        critic_loss = self.update_critic(state, target_value.to(self.device))
+        actor_loss = self.update_actor(state, action, advantage.unsqueeze(1).to(self.device))
+        critic_loss = self.update_critic(state, target_value.unsqueeze(1).to(self.device))
         return actor_loss, critic_loss
         
     def update_actor(self, state, action, advantage):
         start_time = time()
         #update actor network
         old_pi = self.actor.get_detach_pi(state)
-        log_action_probs = self.actor.get_log_prob(state, action).squeeze()
+        log_action_probs = self.actor.get_log_prob(state, action)
         old_log_action_probs = log_action_probs.clone().detach()
         actor_loss = 0.0
         
@@ -85,7 +89,7 @@ class PPO(object):
                 print("Upto target_kl at Step {}".format(i))
                 break
 
-            log_action_probs = self.actor.get_log_prob(state, action).squeeze()
+            log_action_probs = self.actor.get_log_prob(state, action)
         print('PPO updates actor by using {}s'.format(time() - start_time)) 
         return actor_loss
     
@@ -94,7 +98,7 @@ class PPO(object):
         # update critic network
         critic_loss = 0.0
         for _ in range(self.value_steps_per_update):
-            value = self.critic(state).squeeze()
+            value = self.critic(state)
             critic_loss = F.mse_loss(value, target_value)
             self.critic_optim.zero_grad()
             critic_loss.backward()

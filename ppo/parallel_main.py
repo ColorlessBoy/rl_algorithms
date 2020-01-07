@@ -214,7 +214,7 @@ if __name__ == "__main__":
                     args.device,        # device
                     seed+rank,          # seed
                     (64, 64),           # hidden_sizes
-                    2000,               # episodes
+                    1000,               # episodes
                     1000,               # max_episode_step
                     args.batch,         # batch_size
                     0.99,               # gamma

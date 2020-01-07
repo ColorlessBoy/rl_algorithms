@@ -46,7 +46,7 @@ class GlobalPPO(PPO):
         start_time = time()
         #update actor network
         old_pi = self.actor.get_detach_pi(state)
-        log_action_probs = self.actor.get_log_prob(state, action).squeeze()
+        log_action_probs = self.actor.get_log_prob(state, action)
         old_log_action_probs = log_action_probs.clone().detach()
         actor_loss = 0.0
         
@@ -69,7 +69,7 @@ class GlobalPPO(PPO):
                 print("Upto target_kl at Step {}".format(i))
                 break
 
-            log_action_probs = self.actor.get_log_prob(state, action).squeeze()
+            log_action_probs = self.actor.get_log_prob(state, action)
         print('Global ppo updates actor by using {}s.'.format(time() - start_time))
         return actor_loss
     
@@ -79,7 +79,7 @@ class GlobalPPO(PPO):
         rank = dist.get_rank()
         critic_loss = 0.0
         for _ in range(self.value_steps_per_update):
-            value = self.critic(state).squeeze()
+            value = self.critic(state)
             critic_loss = F.mse_loss(value, target_value)
             self.critic_optim.zero_grad()
             critic_loss.backward()
