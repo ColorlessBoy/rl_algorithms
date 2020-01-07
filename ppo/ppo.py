@@ -21,43 +21,39 @@ class PPO(object):
         self.critic = critic.to(device)
         self.actor_optim = Adam(self.actor.parameters(), lr=pi_lr)
         self.critic_optim = Adam(self.critic.parameters(), lr=v_lr)
-        self.clip = torch.tensor(clip, device=device)
-        self.gamma = torch.tensor(gamma)
-        self.tau = torch.tensor(tau)
-        self.pi_steps_per_update = torch.tensor(pi_steps_per_update, device=device)
-        self.value_steps_per_update = torch.tensor(value_steps_per_update, device=device)
-        self.target_kl = torch.tensor(target_kl, device=device)
+        self.clip = clip
+        self.gamma = gamma
+        self.tau = tau
+        self.pi_steps_per_update = pi_steps_per_update
+        self.value_steps_per_update = value_steps_per_update
+        self.target_kl = target_kl
         self.device = device
     
     def getGAE(self, state, reward, mask):
         # On CPU.
         start_time = time()
         with torch.no_grad():
-            value = self.critic(state).cpu()
-            returns = torch.zeros_like(reward)
-            delta = torch.zeros_like(reward)
-            advantage = torch.zeros_like(reward)
+            value = self.critic(state).cpu().squeeze()
+        returns = torch.zeros(len(reward))
+        delta = torch.zeros(len(reward))
+        advantage = torch.zeros(len(reward))
 
-            prev_return = torch.tensor(0.0, device=self.device)
-            prev_value = torch.tensor(0.0, device=self.device)
-            prev_advantage = torch.tensor(0.0, device=self.device)
-            for i in reversed(range(reward.size(0))):
-                returns[i, 0] = reward[i, 0] + self.gamma * prev_return * mask[i, 0]
-                delta[i, 0] = reward[i, 0] + self.gamma * prev_value * mask[i, 0] - value[i, 0]
-                advantage[i, 0] = delta[i, 0] + self.gamma * self.tau * prev_advantage * mask[i, 0]
-
-                prev_return = returns[i, 0]
-                prev_value = value[i, 0]
-                prev_advantage = advantage[i, 0]
+        prev_return = 0.0
+        prev_value = 0.0
+        prev_advantage = 0.0
+        for i in reversed(range(len(reward))):
+            prev_return    = returns[i]   = reward[i] + self.gamma * prev_return * mask[i]
+            prev_value     = delta[i]     = reward[i] + self.gamma * prev_value * mask[i] - value[i]
+            prev_advantage = advantage[i] = delta[i] + self.gamma * self.tau * prev_advantage * mask[i]
         print('The getGAE() uses {}s.'.format(time() - start_time))
         return returns, (advantage - advantage.mean())/advantage.std()
 
     def update(self, state, action, reward, next_state, mask):
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
-        reward = torch.FloatTensor(reward).unsqueeze(1) # cpu
+        # reward = torch.FloatTensor(reward).unsqueeze(1) # cpu
         # next_state = torch.FloatTensor(next_state).to(self.device)
-        mask = torch.FloatTensor(mask).unsqueeze(1) # cpu
+        # mask = torch.FloatTensor(mask).unsqueeze(1) # cpu
 
         # Get generalized advantage estimation
         # and get target value
@@ -70,7 +66,7 @@ class PPO(object):
         start_time = time()
         #update actor network
         old_pi = self.actor.get_detach_pi(state)
-        log_action_probs = self.actor.get_log_prob(state, action)
+        log_action_probs = self.actor.get_log_prob(state, action).squeeze()
         old_log_action_probs = log_action_probs.clone().detach()
         actor_loss = 0.0
         
@@ -89,7 +85,7 @@ class PPO(object):
                 print("Upto target_kl at Step {}".format(i))
                 break
 
-            log_action_probs = self.actor.get_log_prob(state, action)
+            log_action_probs = self.actor.get_log_prob(state, action).squeeze()
         print('PPO updates actor by using {}s'.format(time() - start_time)) 
         return actor_loss
     
@@ -98,7 +94,7 @@ class PPO(object):
         # update critic network
         critic_loss = 0.0
         for _ in range(self.value_steps_per_update):
-            value = self.critic(state)
+            value = self.critic(state).squeeze()
             critic_loss = F.mse_loss(value, target_value)
             self.critic_optim.zero_grad()
             critic_loss.backward()
