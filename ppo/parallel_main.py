@@ -89,16 +89,17 @@ class EnvSampler(object):
 # 15. value_lr (default = 1e-3)
 def run(rank, size, args):
     env = gym.make(args.env_name)
-    if args.device == 'cuda':
-        args.device = 'cuda:{}'.format(rank % torch.cuda.device_count())
-    device = torch.device(args.device)
+    device = args.device
+    if device == 'cuda':
+        device = 'cuda:{}'.format(rank % torch.cuda.device_count())
+    device = torch.device(device)
 
     # 1.Set some necessary seed.
-    torch.manual_seed(args.seed+rank)
-    torch.cuda.manual_seed_all(args.seed+rank)
-    torch.manual_seed(args.seed+rank)
-    np.random.seed(args.seed+rank)
-    env.seed(args.seed+rank)
+    torch.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    env.seed(args.seed)
 
     # 2.Create actor, critic, EnvSampler() and PPO.
     state_size = env.observation_space.shape[0]
@@ -106,30 +107,23 @@ def run(rank, size, args):
     actor = PolicyNetwork(state_size, action_size, hidden_sizes=args.hidden_sizes)
     critic = ValueNetwork(state_size, hidden_sizes=args.hidden_sizes)
     env_sampler = EnvSampler(env, args.max_episode_step)
+    ppo_args = {
+        'actor': actor,
+        'critic': critic,
+        'clip': args.clip,
+        'gamma': args.gamma,
+        'tau': args.tau,
+        'target_kl': args.target_kl,
+        'device': device,
+        'pi_steps_per_update': args.pi_steps_per_update,
+        'value_steps_per_update': args.value_steps_per_update,
+        'pi_lr': args.pi_lr,
+        'v_lr': args.value_lr
+    }
     if args.alg_name == 'local_ppo':
-        alg = LocalPPO(actor, 
-                    critic, 
-                    clip=args.clip, 
-                    gamma=args.gamma, 
-                    tau=args.tau, 
-                    target_kl=args.target_kl, 
-                    device=device,
-                    pi_steps_per_update=args.pi_steps_per_update,
-                    value_steps_per_update=args.value_steps_per_update,
-                    pi_lr=args.pi_lr,
-                    v_lr=args.value_lr)
+        alg = LocalPPO(**ppo_args)
     elif args.alg_name  == 'global_ppo':
-        alg = GlobalPPO(actor, 
-                    critic, 
-                    clip=args.clip, 
-                    gamma=args.gamma, 
-                    tau=args.tau, 
-                    target_kl=args.target_kl, 
-                    device=device,
-                    pi_steps_per_update=args.pi_steps_per_update,
-                    value_steps_per_update=args.value_steps_per_update,
-                    pi_lr=args.pi_lr,
-                    v_lr=args.value_lr)
+        alg = GlobalPPO(**ppo_args)
 
     def get_action(state):
         state = torch.FloatTensor(state).unsqueeze(0).to(device)
@@ -173,6 +167,7 @@ def parallel_run(start_time, rank, size, fn, args, backend='gloo'):
 
     csvfile = open(full_name, 'w')
     writer = csv.writer(csvfile)
+    writer.writerow(['step', 'reward'])
 
     for step, reward, actor_loss, value_loss in fn(rank, size, args):
         reward = reward * args.max_episode_step / args.batch_size
@@ -220,7 +215,7 @@ if __name__ == "__main__":
                     0.99,               # gamma
                     0.97,               # tau
                     0.2,                # clip
-                    0.015,               # target_kl
+                    0.015,              # target_kl
                     80,                 # pi_steps_per_update
                     50,                 # value_steps_per_update
                     3e-4,               # pi_lr

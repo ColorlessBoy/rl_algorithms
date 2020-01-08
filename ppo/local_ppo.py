@@ -23,14 +23,6 @@ class LocalPPO(PPO):
         self.synchronous_parameters(self.actor)
         self.synchronous_parameters(self.critic)
 
-    def update(self, state, action, reward, next_state, mask):
-        actor_loss, value_loss = super(LocalPPO, self).update(state, action, reward, next_state, mask)
-        start_time = time()
-        self.average_parameters(self.actor)
-        self.average_parameters(self.critic)
-        print('Local ppo averages parameters by using {}s.'.format(time()-start_time))
-        return actor_loss, value_loss
-
     def average_parameters(self, model):
         size = float(dist.get_world_size())
         rank = dist.get_rank()
@@ -42,4 +34,12 @@ class LocalPPO(PPO):
     
     def synchronous_parameters(self, model):
         for param in model.parameters():
-            dist.broadcast(param, src=0)
+            dist.broadcast(param.data, src=0)
+
+    def update(self, state, action, reward, next_state, mask):
+        actor_loss, value_loss = super(LocalPPO, self).update(state, action, reward, next_state, mask)
+        start_time = time()
+        self.average_parameters(self.actor)
+        self.average_parameters(self.critic)
+        print('LocalPPO averages parameters by using {}s.'.format(time()-start_time))
+        return actor_loss, value_loss

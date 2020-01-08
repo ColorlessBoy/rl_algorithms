@@ -27,20 +27,23 @@ class GlobalPPO(PPO):
 
     def average_variables(self, variables):
         size = float(dist.get_world_size())
-        dist.all_reduce(variables, op=dist.ReduceOp.SUM)
-        variables /= size
+        rank = dist.get_rank()
+        dist.reduce(variables, dst=0, op=dist.ReduceOp.SUM)
+        if rank == 0:
+            variables /= size
+        dist.broadcast(variables, src=0)
 
     def average_parameters_grad(self, model):
         size = float(dist.get_world_size())
         rank = dist.get_rank()
         for param in model.parameters():
-            dist.reduce(param.grad.data, dst=0)
+            dist.reduce(param.grad.data, dst=0, op=dist.ReduceOp.SUM)
             if rank == 0:
                 param.grad.data /= size
     
     def synchronous_parameters(self, model):
         for param in model.parameters():
-            dist.broadcast(param, src=0)
+            dist.broadcast(param.data, src=0)
     
     def update_actor(self, state, action, advantage):
         start_time = time()
@@ -65,12 +68,15 @@ class GlobalPPO(PPO):
 
             pi = self.actor.get_detach_pi(state)
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
+
+            self.average_variables(kl)
+
             if kl > self.target_kl:
                 print("Upto target_kl at Step {}".format(i))
                 break
 
             log_action_probs = self.actor.get_log_prob(state, action)
-        print('Global ppo updates actor by using {}s.'.format(time() - start_time))
+        print('GlobalPPO updates actor by using {}s.'.format(time() - start_time))
         return actor_loss
     
     def update_critic(self, state, target_value):

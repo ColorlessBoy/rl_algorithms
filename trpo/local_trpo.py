@@ -2,6 +2,8 @@ import torch
 import torch.distributed as dist
 from trpo import TRPO
 
+from time import time
+
 class LocalTRPO(TRPO):
     def __init__(self, 
                 actor, 
@@ -22,21 +24,28 @@ class LocalTRPO(TRPO):
         self.synchronous_parameters(self.actor)
         self.synchronous_parameters(self.critic)
 
-    def update(self, state, action, reward, next_state, mask):
-        actor_loss, critic_loss = super(LocalTRPO, self).update(state, action, reward, next_state, mask)
-        self.average_parameters(self.actor)
-        self.average_parameters(self.critic)    
-        return actor_loss, critic_loss
+    def average_variables(self, variables):
+        size = float(dist.get_world_size())
+        rank = dist.get_rank()
+        dist.reduce(variables, dst=0, op=dist.ReduceOp.SUM)
+        if rank == 0:
+            variables /= size
+        dist.broadcast(variables, src=0)
 
     def average_parameters(self, model):
         size = float(dist.get_world_size())
         rank = dist.get_rank()
         for param in model.parameters():
-            dist.reduce(param.data, dst=0, op=dist.ReduceOp.SUM)
-            if rank == 0:
-                param.data /= size
-            dist.broadcast(param.data, src=0)
+            self.average_variables(param.data)
     
     def synchronous_parameters(self, model):
         for param in model.parameters():
-            dist.broadcast(param, src=0)
+            dist.broadcast(param.data, src=0)
+
+    def update(self, state, action, reward, next_state, mask):
+        actor_loss, critic_loss = super(LocalTRPO, self).update(state, action, reward, next_state, mask)
+        start_time = time()
+        self.average_parameters(self.actor)
+        self.average_parameters(self.critic)    
+        print('LocalTRPO averages parameters by using {}s.'.format(time() - start_time))
+        return actor_loss, critic_loss

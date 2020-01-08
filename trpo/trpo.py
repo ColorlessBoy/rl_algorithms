@@ -3,6 +3,8 @@ import torch.nn.functional as F
 from torch.distributions import kl_divergence
 from torch.optim import Adam
 
+from time import time
+
 def get_flat_params_from(model):
     params = []
     for param in model.parameters():
@@ -45,25 +47,28 @@ class TRPO(object):
         self.device = device
 
     def getGAE(self, state, reward, mask):
+        # On CPU.
+        start_time = time()
         with torch.no_grad():
-            value = self.critic(state)
-            returns = torch.zeros_like(reward)
-            delta = torch.zeros_like(reward)
-            advantage = torch.zeros_like(reward)
+            value = self.critic(state).cpu().squeeze()
+            returns = torch.zeros(len(reward))
+            delta = torch.zeros(len(reward))
+            advantage = torch.zeros(len(reward))
 
-            prev_return = torch.tensor(0.0, device=self.device)
-            prev_value = torch.tensor(0.0, device=self.device)
-            prev_advantage = torch.tensor(0.0, device=self.device)
-            for i in reversed(range(reward.size(0))):
-                returns[i, 0] = reward[i, 0] + self.gamma * prev_return * mask[i, 0]
-                delta[i, 0] = reward[i, 0] + self.gamma * prev_value * mask[i, 0] - value[i, 0]
-                advantage[i, 0] = delta[i, 0] + self.gamma * self.tau * prev_advantage * mask[i, 0]
+            prev_return = 0.0
+            prev_value = 0.0
+            prev_advantage = 0.0
+            for i in reversed(range(len(reward))):
+                returns[i]   = reward[i] + self.gamma * prev_return * mask[i]
+                delta[i]     = reward[i] + self.gamma * prev_value * mask[i] - value[i]
+                advantage[i] = delta[i] + self.gamma * self.tau * prev_advantage * mask[i]
+                prev_return    = returns[i]  
+                prev_value     = value[i]    
+                prev_advantage = advantage[i]
 
-                prev_return = returns[i, 0]
-                prev_value = value[i, 0]
-                prev_advantage = advantage[i, 0]
+        print('The getGAE() uses {}s.'.format(time() - start_time))
         return returns, (advantage - advantage.mean())/advantage.std()
-    
+
     def get_kl_loss(self, state):
         pi = self.actor(state)
         return kl_divergence(self.pi_old, pi).sum(axis=1).mean()
@@ -71,7 +76,17 @@ class TRPO(object):
     def get_actor_loss(self, advantage, log_prob_action, log_prob_action_old):
         return (advantage * torch.exp(log_prob_action - log_prob_action_old)).mean()
 
+    def get_actor_loss_grad(self, state, action, advantage):
+        log_prob_action = self.actor.get_log_prob(state, action)
+        self.log_prob_action_old = log_prob_action.clone().detach()
+        self.actor_loss_old = self.get_actor_loss(advantage, log_prob_action, self.log_prob_action_old)
+
+        grads = torch.autograd.grad(self.actor_loss_old, self.actor.parameters())
+        loss_grad = torch.cat([grad.view(-1) for grad in grads]).data
+        return loss_grad
+
     def cg(self, A, b, iters=10, accuracy=1e-10):
+        start_time = time()
         # A is a function: x ==> A(s) = A @ x
         x = torch.zeros_like(b)
         d = b.clone()
@@ -87,6 +102,7 @@ class TRPO(object):
                 break
             g_dot_g_old = g_dot_g
             g += alpha * Ad
+        print("The cg() uses {}s.".format(time() - start_time))
         return x
     
     def linesearch(self, state, action, advantage, fullstep, steps=10):
@@ -103,30 +119,27 @@ class TRPO(object):
                 log_prob_action = self.actor.get_log_prob(state, action)
                 actor_loss = self.get_actor_loss(advantage, log_prob_action, self.log_prob_action_old)
                 if actor_loss > self.actor_loss_old and kl_loss < self.max_kl:
-                    return True, i, actor_loss
+                    print("linesearch successes at step {}".format(i))
+                    return actor_loss
             set_flat_params_to(self.actor, prev_params)
-        return False, steps, actor_loss
+            print("linesearch failed")
+        return actor_loss
     
     def update(self, state, action, reward, next_state, mask):
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
-        reward = torch.FloatTensor(reward).to(self.device).unsqueeze(1)
-        # next_state = torch.FloatTensor(next_state).to(self.device)
-        mask = torch.FloatTensor(mask).to(self.device).unsqueeze(1)
 
         value_target, advantage = self.getGAE(state, reward, mask)
 
-        actor_loss = self.update_actor(state, action, advantage)
-        value_loss = self.update_critic(state, value_target)
+        actor_loss = self.update_actor(state, action, advantage.to(self.device).unsqueeze(1))
+        value_loss = self.update_critic(state, value_target.to(self.device).unsqueeze(1))
         return actor_loss, value_loss
 
-    def update_actor(self, state, action, advantage):
-        log_prob_action = self.actor.get_log_prob(state, action)
-        self.log_prob_action_old = log_prob_action.clone().detach()
-        self.actor_loss_old = self.get_actor_loss(advantage, log_prob_action, self.log_prob_action_old)
 
-        grads = torch.autograd.grad(self.actor_loss_old, self.actor.parameters())
-        loss_grad = torch.cat([grad.view(-1) for grad in grads]).data
+    def update_actor(self, state, action, advantage):
+        start_time = time()
+
+        loss_grad = self.get_actor_loss_grad(state, action, advantage)
 
         self.pi_old = self.actor.get_detach_pi(state)
 
@@ -139,17 +152,18 @@ class TRPO(object):
             return flat_grad_grad + x * self.damping
 
         invHg = self.cg(get_Hx, loss_grad, self.cg_steps)
+
         lm = torch.sqrt(0.5 * loss_grad @ invHg / self.max_kl)
         fullstep = invHg / lm
 
-        flag, step, actor_loss = self.linesearch(state, action, advantage, fullstep)
-        if flag:
-            print("linesearch successes at step {}".format(step))
-        else:
-            print("linesearch failed")
+        actor_loss = self.linesearch(state, action, advantage, fullstep)
+
+        print("The update_actor() uses {}s".format(time() - start_time))
+
         return actor_loss
 
     def update_critic(self, state, target_value):
+        start_time = time()
         value_loss = 0.0
         for _ in range(self.value_steps_per_update):
             value = self.critic(state)
@@ -157,4 +171,5 @@ class TRPO(object):
             self.critic_optim.zero_grad()
             value_loss.backward()
             self.critic_optim.step()
+        print("The update_critic uses {}s".format(time() - start_time))
         return value_loss

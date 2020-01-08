@@ -168,7 +168,7 @@ if __name__ == "__main__":
                 0.99,               # gamma
                 0.97,               # tau
                 0.2,                # clip
-                0.015,               # target_kl
+                0.015,              # target_kl
                 80,                 # pi_steps_per_update
                 50,                 # value_steps_per_update
                 3e-4,               # pi_lr
@@ -182,10 +182,10 @@ if __name__ == "__main__":
 
     csvfile = open(full_name, 'w')
     writer = csv.writer(csvfile)
-
-    begin_time = time()
+    writer.writerow(['step', 'reward'])
+    start_time = time()
     for step, reward, actor_loss, value_loss in main(alg_args):
         reward = reward * alg_args.max_episode_step / alg_args.batch_size
         writer.writerow([step, reward])
         print('Step {}: Reward = {}, actor_loss = {}, value_loss = {}'.format(step, reward, actor_loss, value_loss))
-    print("Total time: {}".format(time() - begin_time))
+    print("Total time: {}s.".format(time() - start_time))
