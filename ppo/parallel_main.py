@@ -5,6 +5,7 @@ from torch.multiprocessing import Process
 import torch.distributed as dist
 from time import time
 import csv
+from collections import namedtuple
 
 from utils import EnvSampler
 from models import PolicyNetwork, ValueNetwork
@@ -37,8 +38,6 @@ def run(rank, size, args):
     # 1.Set some necessary seed.
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
     env.seed(args.seed)
 
     # 2.Create actor, critic, EnvSampler() and PPO.

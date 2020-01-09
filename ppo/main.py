@@ -3,6 +3,7 @@ import torch
 from time import time
 import os
 import csv
+from collections import namedtuple
 
 from utils import EnvSampler
 from models import PolicyNetwork, ValueNetwork

@@ -3,9 +3,9 @@ import gym
 import torch
 from torch.multiprocessing import Process
 import torch.distributed as dist
-
 from time import time
 import csv
+from collections import namedtuple
 
 from utils import EnvSampler
 from models import PolicyNetwork, ValueNetwork
@@ -40,8 +40,6 @@ def run(rank, size, args):
     # 1.Set some necessary seed.
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed_all(args.seed)
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
     env.seed(args.seed)
 
     # 2.Create actor, critic, EnvSampler() and PPO.
@@ -143,8 +141,8 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Run experiment with optional args')
-    parser.add_argument('--alg', default="local_ppo", metavar='G',
-                        help='name of the algorithm to run (default: local_ppo)')
+    parser.add_argument('--alg', default="local_trpo", metavar='G',
+                        help='name of the algorithm to run (default: local_trpo)')
     parser.add_argument('--env_name', default="HalfCheetah-v2", metavar='G',
                         help='name of environment to run (default: HalfCheetah-v2)')
     parser.add_argument('--device', default='cpu', metavar='G',

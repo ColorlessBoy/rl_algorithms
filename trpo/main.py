@@ -1,13 +1,13 @@
 import gym
 import torch
+import os
+import csv
+from time import time
+from collections import namedtuple
 
 from utils import EnvSampler
 from models import PolicyNetwork, ValueNetwork
 from trpo import TRPO
-
-import os
-import csv
-from time import time
 
 
 # The properties of args:
