@@ -25,8 +25,9 @@ class Memory(object):
     def push(self, *args):
         self.memory.append(Transition(*args))
 
-    def sample(self):
-        return Transition(*zip(*self.memory))
+    def sample(self, batch_szie):
+        batch = random.sample(self.memory, batch_size)
+        return Transition(*zip(*batch))
 
     def __len__(self):
         return len(self.memory)
