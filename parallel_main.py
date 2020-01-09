@@ -10,10 +10,12 @@ from time import time
 import csv
 
 from models import PolicyNetwork, ValueNetwork
+
 from ppo.local_ppo import LocalPPO
-from ppo.global_ppo import GlobalPPO
+from ppo.global_ppo import GlobalPPO #Global_ppo is too slow in simulation.
 from trpo.local_trpo import LocalTRPO
 from trpo.dmtrpo import DMTRPO
+from trpo.trpo import TRPO
 
 
 # Taken from
@@ -183,7 +185,11 @@ Args = namedtuple('Args',
                 'pi_steps_per_update',
                 'value_steps_per_update',
                 'pi_lr',
-                'value_lr'))
+                'value_lr',
+                'cg_steps',         # trpo
+                'linesearch_steps', # trpo
+                'init_std'))        # trpo
+
 
 def parallel_run(rank, size, fn, args, backend='gloo'):
     """ Initialize the distributed environment. """
@@ -223,23 +229,27 @@ if __name__ == "__main__":
     processes = []
     start_time = time()
     seed = 0
+    device_cnt = torch.cuda.device_cnt()
     for rank in range(size):
-        alg_args = Args(args.alg,       # alg_name
-                    'HalfCheetah-v2',   # env_name
-                    'cuda:0',           # device
-                    seed+size-rank-1,   # seed
-                    (64, 64),           # hidden_sizes
-                    2000,               # episodes
-                    1000,               # max_episode_step
-                    1000,               # batch_size
-                    0.99,               # gamma
-                    0.97,               # tau
-                    0.2,                # clip
-                    0.02,               # target_kl
-                    80,                 # pi_steps_per_update
-                    80,                 # value_steps_per_update
-                    3e-4,               # pi_lr
-                    1e-3)               # value_lr
+        alg_args = Args(args.alg,                       # alg_name
+                    'HalfCheetah-v2',                   # env_name
+                    'cuda:{}'.format(rank%device_cnt),  # device
+                    seed+rank,                          # seed
+                    (64, 64),                           # hidden_sizes
+                    2000,                               # episodes
+                    1000,                               # max_episode_step
+                    1000,                               # batch_size
+                    0.99,                               # gamma
+                    0.97,                               # tau
+                    0.2,                                # clip
+                    0.02,                               # target_kl
+                    80,                                 # pi_steps_per_update
+                    80,                                 # value_steps_per_update
+                    3e-4,                               # pi_lr
+                    1e-3,                               # value_lr
+                    20,                                 # trpo: cg_steps
+                    20,                                 # trpo: linesearch_steps
+                    1.0)                                # init_std
         p = Process(target=parallel_run, args=(rank, size, run, alg_args, 'nccl'))
         p.start()
         processes.append(p)
