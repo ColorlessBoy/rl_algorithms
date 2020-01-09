@@ -34,12 +34,13 @@ def run(args):
     
     v_net = ValueNetwork(state_size, args.hidden_sizes)
     q_net = QNetwork(state_size, action_size, args.hidden_sizes)
+    q2_net = QNetwork(state_size, action_size, args.hidden_sizes)
     pi_net = PolicyNetwork(state_size, action_size, args.hidden_sizes)
     vt_net = ValueNetwork(state_size, args.hidden_sizes)
     hard_update(vt_net, v_net)
 
     env_sampler = EnvSampler(env, args.episode_length)
-    alg = SAC(v_net, q_net, pi_net, vt_net,
+    alg = SAC(v_net, q_net, q2_net, pi_net, vt_net,
                 gamma=0.99, alpha=0.2,
                 v_lr=3e-4, q_lr=3e-4, pi_lr=3e-4, vt_lr = 0.02,
                 device=device)
