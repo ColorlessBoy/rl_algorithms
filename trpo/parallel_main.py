@@ -77,9 +77,10 @@ def run(rank, size, args):
     # 3.Start training.
     total_step = 0
     for episode in range(1, args.episodes+1):
-        episode_reward, samples = env_sampler(get_action, args.batch_size)
+        episode_reward, samples, length = env_sampler(get_action, args.batch_size)
         actor_loss, value_loss = alg.update(*samples)
-        yield episode*args.max_episode_step, episode_reward, actor_loss, value_loss
+        total_step += length
+        yield total_step, episode_reward, actor_loss, value_loss
 
 # The properties of args:
 # 0. alg_name (default = 'hmtrpo')
@@ -131,7 +132,6 @@ def parallel_run(start_time, rank, size, fn, args, backend='gloo'):
     writer = csv.writer(csvfile)
     writer.writerow(['step', 'reward'])
     for step, reward, actor_loss, value_loss in fn(rank, size, args):
-        reward = reward * args.max_episode_step / args.batch_size
         writer.writerow([step, reward])
         print('Rank {}, Step {}: Reward = {}, actor_loss = {}, value_loss = {}'.format(rank, step, reward, actor_loss, value_loss))
 

@@ -63,9 +63,10 @@ def main(args):
     
     total_step = 0
     for episode in range(1, args.episodes+1):
-        episode_reward, samples = env_sampler(get_action, args.batch_size)
+        episode_reward, samples, length = env_sampler(get_action, args.batch_size)
         actor_loss, value_loss = trpo.update(*samples)
-        yield episode*args.batch_size, episode_reward, actor_loss, value_loss
+        total_step += length
+        yield total_step, episode_reward, actor_loss, value_loss
 
 # The properties of args:
 # 1. env_name (default = 'HalfCheetah-v2')
@@ -142,7 +143,6 @@ if __name__ == '__main__':
     writer.writerow(['step', 'reward'])
     start_time = time()
     for step, reward, actor_loss, value_loss in main(alg_args):
-        reward = reward * alg_args.max_episode_step / alg_args.batch_size
         writer.writerow([step, reward])
         print("Step {}: Reward = {}, Actor_loss = {}, Value_loss = {}".format(step, reward, actor_loss, value_loss))
     print("Total time: {}s.".format(time() - start_time))

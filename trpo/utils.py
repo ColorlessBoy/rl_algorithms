@@ -24,9 +24,10 @@ class EnvSampler(object):
     def __init__(self, env, max_episode_step=1000):
         self.env = env
         self.max_episode_step = max_episode_step
-        self.env_init()
         self.action_scale = (env.action_space.high - env.action_space.low)/2
         self.action_bias = (env.action_space.high + env.action_space.low)/2
+        self.n_trajectory = 0
+        self.env_init()
     
     # action_encode and action_decode project action into [-1, 1]^n
     def action_encode(self, action):
@@ -39,21 +40,29 @@ class EnvSampler(object):
         self.state = self.env.reset()
         self.done = False
         self.episode_step = 1
-    
+        self.n_trajectory += 1
+
+    def getSample(self, get_action, memory):
+        action_ = get_action(self.state)
+        action = self.action_decode(action_)
+        next_state, reward, self.done, _ = self.env.step(action) 
+        # The env will automatically clamp action into [action_space.low, action_space.high]^n
+        mask = 1.0 if not self.done else 0.0
+        memory.push(self.state, action_, reward, next_state, mask)
+        self.state = next_state
+        self.episode_step += 1
+        if self.done or self.episode_step > self.max_episode_step:
+            self.env_init()
+        return reward
+
     def __call__(self, get_action, batch_size):
-        # I suggest batch_size to be the multiple of max_episode_step.
+        self.env_init()
         memory = Memory()
         batch_reward = 0.0
+        start_trajectory = self.n_trajectory
         for _ in range(batch_size):
-            action_ = get_action(self.state)
-            action =self.action_decode(action_)
-            next_state, reward, self.done, _ = self.env.step(action) 
-            # The env will automatically clamp action into [action_space.low, action_space.high]^n
-            batch_reward += reward
-            mask = 1.0 if not self.done else 0.0
-            memory.push(self.state, action_, reward, next_state, mask)
-            self.state = next_state
-            self.episode_step += 1
-            if self.done or self.episode_step > self.max_episode_step:
-                self.env_init()
-        return batch_reward, memory.sample()
+            batch_reward += self.getSample(get_action, memory)
+        while self.episode_step != 1:
+            batch_reward += self.getSample(get_action, memory)
+        n = self.n_trajectory - start_trajectory
+        return batch_reward / n, memory.sample(), len(memory)
