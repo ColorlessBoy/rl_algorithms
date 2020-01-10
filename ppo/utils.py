@@ -26,7 +26,7 @@ class EnvSampler(object):
         self.max_episode_step = max_episode_step
         self.action_scale = (env.action_space.high - env.action_space.low)/2
         self.action_bias = (env.action_space.high + env.action_space.low)/2
-        self.n_trajectory = 0
+        self.episode_num = -1
         self.env_init()
     
     # action_encode and action_decode project action into [-1, 1]^n
@@ -39,30 +39,37 @@ class EnvSampler(object):
     def env_init(self):
         self.state = self.env.reset()
         self.done = False
-        self.episode_step = 1
-        self.n_trajectory += 1
+        self.episode_step = 0
+        self.episode_num += 1
+        self.episode_reward = 0.0
 
-    def getSample(self, get_action, memory):
-        action_ = get_action(self.state)
-        action = self.action_decode(action_)
-        next_state, reward, self.done, _ = self.env.step(action) 
-        # The env will automatically clamp action into [action_space.low, action_space.high]^n
-        mask = 1.0 if not self.done else 0.0
-        memory.push(self.state, action_, reward, next_state, mask)
-        self.state = next_state
-        self.episode_step += 1
-        if self.done or self.episode_step > self.max_episode_step:
-            self.env_init()
-        return reward
-
-    def __call__(self, get_action, batch_size):
+    def __call__(self, get_action, batch_size, get_value):
+        # get_value is used to correct early cutting error.
         self.env_init()
         memory = Memory()
-        batch_reward = 0.0
-        start_trajectory = self.n_trajectory
-        for _ in range(batch_size):
-            batch_reward += self.getSample(get_action, memory)
-        while self.episode_step != 1:
-            batch_reward += self.getSample(get_action, memory)
-        n = self.n_trajectory - start_trajectory
-        return batch_reward / n, memory.sample(), len(memory)
+        total_episode_reward = 0.0
+        start_episode_num = self.episode_num
+        for idx in range(batch_size):
+            action_ = get_action(self.state)
+            action = self.action_decode(action_)
+            next_state, reward, self.done, _ = self.env.step(action) 
+            self.episode_step += 1
+            self.episode_reward += reward
+
+            mask = 0.0 if self.done or self.episode_step >= self.max_episode_step else 1.0
+
+            if mask == 1.0 and idx == batch_size - 1:
+                print("Warning: trajectory cut off by epoch at {}".format(self.episode_step))
+                reward += get_value(next_state)
+                memory.push(self.state, action_, reward, next_state, 0.0)
+            else:
+                memory.push(self.state, action_, reward, next_state, mask)
+
+            self.state = next_state
+
+            if mask == 0.0:
+                total_episode_reward += self.episode_reward
+                self.env_init()
+
+        avg_episode_reward = total_episode_reward / (self.episode_num - start_episode_num)
+        return avg_episode_reward , memory.sample()

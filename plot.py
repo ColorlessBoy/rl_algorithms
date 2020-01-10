@@ -13,9 +13,9 @@ plt.switch_backend('agg')
 
 parser = argparse.ArgumentParser(description='Plot experiment results')
 parser.add_argument('--alg-list', nargs='+', help='algorimthms to plot')
-parser.add_argument('--env-name', type=str, help='env-name')
-parser.add_argument('--num-repeat', type=int, help='num-repeat')
-parser.add_argument('--workers', type=int, help='workers')
+parser.add_argument('--env-name', default='Hopper-v2', type=str, help='env-name')
+parser.add_argument('--num-repeat', default=1, type=int, help='num-repeat')
+parser.add_argument('--workers', default=2, type=int, help='workers')
 
 args = parser.parse_args()
 
@@ -31,10 +31,16 @@ for i, alg in enumerate(alg_list):
 
 # load csv
 for alg in alg_list:
-    if 'trpo' in alg:
+    if alg == 'trpo':
+        path = './trpo/logs/algo_{}/env_{}'.format(alg, env_name)
+    elif alg == 'ppo':
+        path = './ppo/logs/algo_{}/env_{}'.format(alg, env_name)
+    elif 'trpo' in alg:
         path = './trpo/logs/algo_{}/env_{}/workers{}'.format(alg, env_name, args.workers)
+        num_repeat *= args.workers
     else:
         path = './ppo/logs/algo_{}/env_{}/workers{}'.format(alg, env_name, args.workers)
+        num_repeat *= args.workers
 
     file_list = os.listdir(path)
     # only includes csvs
@@ -45,7 +51,7 @@ for alg in alg_list:
             alg_pd_dict[alg]['step'] = data['step']
         alg_pd_dict[alg]['Run{}'.format(i)] = data['reward']
 
-loc_list = ['Run{}'.format(i) for i in range(num_repeat * args.workers)]
+loc_list = ['Run{}'.format(i) for i in range(num_repeat)]
 for alg in alg_list:
     alg_pd_dict[alg]['reward_smooth'] = alg_pd_dict[alg].loc[:,loc_list].mean(1).ewm(span=3).mean()
     ci = sci.ci(alg_pd_dict[alg].loc[:,loc_list].T, alpha=0.1, statfunction=lambda x: np.average(x, axis=0))

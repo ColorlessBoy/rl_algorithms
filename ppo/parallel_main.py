@@ -43,8 +43,8 @@ def run(rank, size, args):
     # 2.Create actor, critic, EnvSampler() and PPO.
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.shape[0]
-    actor = PolicyNetwork(state_size, action_size, hidden_sizes=args.hidden_sizes)
-    critic = ValueNetwork(state_size, hidden_sizes=args.hidden_sizes)
+    actor = PolicyNetwork(state_size, action_size, hidden_sizes=args.hidden_sizes).to(device)
+    critic = ValueNetwork(state_size, hidden_sizes=args.hidden_sizes).to(device)
     env_sampler = EnvSampler(env, args.max_episode_step)
     ppo_args = {
         'actor': actor,
@@ -69,12 +69,18 @@ def run(rank, size, args):
         action = actor.select_action(state)
         return action.detach().cpu().numpy()[0]
 
+    def get_value(state):
+        with torch.no_grad():
+            state = torch.FloatTensor(state).unsqueeze(0).to(device)
+            value = critic(state)
+        return value.cpu().numpy()[0, 0]
+
     # 3.Start training.
     total_step = 0
     for episode in range(1, args.episodes+1):
-        episode_reward, samples, length = env_sampler(get_action, args.batch_size)
+        episode_reward, samples = env_sampler(get_action, args.batch_size, get_value)
         actor_loss, value_loss = alg.update(*samples)
-        total_step += length
+        total_step += args.batch_size
         yield total_step, episode_reward, actor_loss, value_loss
 
 Args = namedtuple('Args',
