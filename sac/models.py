@@ -36,10 +36,12 @@ class Network(nn.Module):
 # We require that action is in [-1, 1]^n
 class PolicyNetwork(Network):
     def __init__(self, input_size, output_size, hidden_sizes=(64, 64),
-                 activation=torch.tanh, output_activation=None, init_std=1.0, min_std=1e-6):
+                 activation=torch.tanh, output_activation=None, 
+                 init_std=1.0, max_std=100, min_std=1e-10):
 
         super(PolicyNetwork, self).__init__(input_size, output_size, hidden_sizes, activation, output_activation)
 
+        self.max_log_std = math.log(max_std)
         self.min_log_std = math.log(min_std)
 
         self.log_std = nn.Parameter(torch.full((1, output_size), math.log(init_std)))
@@ -47,7 +49,7 @@ class PolicyNetwork(Network):
 
     def forward(self, x):
         mean = super(PolicyNetwork, self).forward(x)
-        std = self.log_std.clamp(min=self.min_log_std).exp()
+        std = self.log_std.clamp(min=self.min_log_std, max=self.max_log_std).exp()
         return Normal(loc=mean, scale=std)
     
     def get_detach_pi(self, x):
