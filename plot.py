@@ -21,7 +21,6 @@ args = parser.parse_args()
 
 alg_list = args.alg_list
 env_name = args.env_name
-num_repeat = args.num_repeat
 num_alg = len(alg_list)
 legent_name = {}
 alg_pd_dict = {}
@@ -29,6 +28,7 @@ for i, alg in enumerate(alg_list):
     legent_name['alg{}'.format(i)] = alg
     alg_pd_dict[alg] = pd.DataFrame()
 
+num_repeat = 1
 # load csv
 for alg in alg_list:
     if alg == 'trpo':
@@ -37,12 +37,11 @@ for alg in alg_list:
         path = './ppo/logs/algo_{}/env_{}'.format(alg, env_name)
     elif 'trpo' in alg:
         path = './trpo/logs/algo_{}/env_{}/workers{}'.format(alg, env_name, args.workers)
-        num_repeat *= args.workers
     else:
         path = './ppo/logs/algo_{}/env_{}/workers{}'.format(alg, env_name, args.workers)
-        num_repeat *= args.workers
 
     file_list = os.listdir(path)
+    num_repeat = len(file_list)
     # only includes csvs
     for i, csv in enumerate(file_list):
         csv_path = os.path.join(path, csv)

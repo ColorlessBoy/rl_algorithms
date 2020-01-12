@@ -1,5 +1,5 @@
 {
-    "python.pythonPath": "/home/peng/anaconda3/envs/pytorch/bin/python",
+    "python.pythonPath": "C:\\Users\\pengl\\Anaconda3\\python.exe",
     "python.linting.pylintEnabled": true,
     "python.linting.enabled": true
 }
