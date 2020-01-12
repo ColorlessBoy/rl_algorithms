@@ -46,7 +46,7 @@ class EnvSampler(object):
     def env_init(self):
         self.state = self.env.reset()
         self.done = False
-        self.episode_step = 1
+        self.episode_step = 0
         self.episode_reward = 0.0
 
     # action_encode and action_decode project action into [-1, 1]^n
@@ -57,34 +57,58 @@ class EnvSampler(object):
         return action_ * self.action_scale + self.action_bias
 
     def addSample(self, get_action):
-        if self.done: self.env_init()
         action_ = get_action(self.state)
         action =self._action_decode(action_)
         next_state, reward, self.done, _ = self.env.step(action) 
-        if self.episode_step > self.max_episode_step:
-            self.done = True
-        mask = 0.0 if self.done else 1.0
+        mask = 1.0
+        if self.done or self.episode_step >= self.max_episode_step:
+            mask = 0.0
         self.memory.push(self.state, action_, reward, next_state, mask)
 
         self.episode_reward += reward
         self.episode_step += 1
         self.state = next_state
+
+        if mask == 0.0: 
+            episode_reward = self.episode_reward
+            self.env_init()
+            return True, episode_reward
+
+        return False, self.episode_reward
     
     def addSamples(self, steps):
-    # Warmup the memory.
+        # Warmup the memory.
         self.env_init()
         for _ in range(steps):
             action = self.env.action_space.sample()
             action_ = self._action_encode(action)
             next_state, reward, self.done, _ = self.env.step(action) 
-            if self.episode_step > self.max_episode_step:
-                self.done = True
-            mask = 0.0 if self.done else 1.0
+            mask = 1.0
+            if self.done or self.episode_step >= self.max_episode_step:
+                mask = 0.0
             self.memory.push(self.state, action_, reward, next_state, mask)
             self.episode_reward += reward
             self.episode_step += 1
             self.state = next_state
-            if self.done: self.env_init()
+            if mask == 0.0: self.env_init()
+        self.env_init()
 
     def sample(self, batch_size):
         return self.memory.sample(batch_size)
+    
+    def test(self, get_action, times=10):
+        episode_reward = 0.0
+        for _ in range(times):
+            self.env_init()
+            while(not self.done):
+                action_ = get_action(self.state)
+                action =self._action_decode(action_)
+                next_state, reward, self.done, _ = self.env.step(action) 
+                if self.episode_step >= self.max_episode_step:
+                    self.done = True
+                self.episode_reward += reward
+                self.episode_step += 1
+                self.state = next_state
+            episode_reward += self.episode_reward
+        self.env_init()
+        return episode_reward / times

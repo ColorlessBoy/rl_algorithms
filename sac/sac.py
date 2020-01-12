@@ -7,7 +7,7 @@ from utils import soft_update
 class SAC(object):
     def __init__(self, v_net, q_net, q2_net, pi_net, vt_net, 
                 gamma=0.99, alpha=0.2,
-                v_lr=1e-3, q_lr=1e-3, pi_lr=1e-3, vt_lr = 0.2,
+                v_lr=1e-3, q_lr=1e-3, pi_lr=1e-3, vt_lr = 0.005,
                 device=torch.device('cpu')):
         # nets
         self.v_net, self.q_net, self.q2_net, self.pi_net, self.vt_net = \

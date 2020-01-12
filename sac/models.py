@@ -12,7 +12,7 @@ def _weight_init(module):
         module.bias.data.zero_()
 
 class Network(nn.Module):
-    def __init__(self, input_size, output_size, hidden_sizes=(64, 64), activation=torch.tanh, output_activation=None):
+    def __init__(self, input_size, output_size, hidden_sizes=(64, 64), activation=torch.relu, output_activation=None):
         super().__init__()
         self.activation = activation
         self.output_activation = output_activation
@@ -36,52 +36,53 @@ class Network(nn.Module):
 # We require that action is in [-1, 1]^n
 class PolicyNetwork(Network):
     def __init__(self, input_size, output_size, hidden_sizes=(64, 64),
-                 activation=torch.tanh, output_activation=None, 
-                 init_std=1.0, max_std=100, min_std=1e-10):
+                 activation=torch.relu, output_activation=torch.tanh, 
+                 init_std=1.0, max_log_std=2, min_log_std=-20, epsilon=1e-6):
 
-        super(PolicyNetwork, self).__init__(input_size, output_size, hidden_sizes, activation, output_activation)
+        super(PolicyNetwork, self).__init__(input_size, hidden_sizes[-1], hidden_sizes[-1:], activation, activation)
 
-        self.max_log_std = math.log(max_std)
-        self.min_log_std = math.log(min_std)
+        self.log_std_bias = 0.5 * (max_log_std + min_log_std)
+        self.log_std_scale = 0.5 * (max_log_std - min_log_std)
+        self.output_activation = output_activation
+        self.epsilon = epsilon
 
-        self.log_std = nn.Parameter(torch.full((1, output_size), math.log(init_std)))
+        self.mean_layers = nn.Linear(hidden_sizes[-1], output_size)
+        self.std_layers = nn.Linear(hidden_sizes[-1], output_size)
         self.apply(_weight_init)
 
     def forward(self, x):
-        mean = super(PolicyNetwork, self).forward(x)
-        std = self.log_std.clamp(min=self.min_log_std, max=self.max_log_std).exp()
-        return Normal(loc=mean, scale=std)
+        x = super(PolicyNetwork, self).forward(x)
+        mean = self.mean_layers(x)
+        log_std = self.std_layers(x)
+        if self.output_activation:
+            mean = self.output_activation(mean)
+        # Spinningup method.
+        log_std = torch.tanh(log_std)
+        log_std = self.log_std_bias + self.log_std_scale * log_std
+        return Normal(loc=mean, scale=log_std.exp())
     
-    def get_detach_pi(self, x):
-        with torch.no_grad():
-            pi = self.forward(x)
-        return pi
-
-    def get_log_prob(self, x, actions):
-        pi = self.forward(x)
-        return pi.log_prob(actions).sum(1, keepdim=True)
-
     def select_action(self, state):
         pi = self.forward(state)
-        action = pi.rsample()
-        log_pi_action = pi.log_prob(action).sum(1, keepdim=True)
-        return action, log_pi_action
+        y = pi.rsample()
+        action = torch.tanh(y)
+        log_pi_action = pi.log_prob(y) - torch.log(1 - action.pow(2) + self.epsilon)
+        return action, log_pi_action.sum(axis=1, keepdim=True)
 
-    def select_action_detach(self, state):
-        with torch.no_grad():
-            pi = self.forward(state)
-            action = pi.sample()
+    def get_mean_action(self, state):
+        pi = self.forward(state)
+        y = pi.loc
+        action = torch.tanh(y)
         return action
 
 class ValueNetwork(Network):
     def __init__(self, input_size, hidden_sizes=(64, 64), \
-                activation=torch.tanh, output_activation=None):
+                activation=torch.relu, output_activation=None):
         super(ValueNetwork, self).__init__(input_size, 1, hidden_sizes,
                                             activation, output_activation)
 
 class QNetwork(Network):
     def __init__(self, state_size, action_size, hidden_sizes=(64,64), \
-                activation=torch.tanh, output_activation=None):
+                activation=torch.relu, output_activation=None):
         super(QNetwork, self).__init__(state_size + action_size, 1, hidden_sizes, 
                                         activation, output_activation)
     
@@ -92,14 +93,16 @@ class QNetwork(Network):
 if __name__ == '__main__':
     state_size = 10
     action_size = 4
-    policy = PolicyNetwork(state_size, action_size, (10, 10))
+    policy = PolicyNetwork(state_size, action_size, (64, 64))
     v_net = ValueNetwork(state_size)
     q_net = QNetwork(state_size, action_size)
     state = torch.randn((2, 10))
-    action = policy.select_action_detach(state)
-    print(action)
+    action, _ = policy.select_action(state)
+    print("action = ", action)
 
     print(v_net(state))
 
     print(q_net(state, action))
+
+    print(policy)
 
