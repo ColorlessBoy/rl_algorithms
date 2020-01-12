@@ -83,7 +83,8 @@ class PPO(object):
             actor_loss.backward()
             self.actor_optim.step()
 
-            pi = self.actor.get_detach_pi(state)
+            with torch.no_grad():
+                pi = self.actor(state)
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
             if kl > self.target_kl:
                 print("Upto target_kl at Step {}".format(i))

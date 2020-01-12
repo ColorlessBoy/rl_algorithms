@@ -59,7 +59,7 @@ def main(args):
     def get_action(state):
         with torch.no_grad():
             state = torch.FloatTensor(state).unsqueeze(0).to(device)
-            action = actor.select_action(state)
+            action, _ = actor.select_action(state)
         return action.cpu().numpy()[0]
 
     def get_value(state):
@@ -67,7 +67,7 @@ def main(args):
             state = torch.FloatTensor(state).unsqueeze(0).to(device)
             value = critic(state)
         return value.cpu().numpy()[0, 0]
-
+        
     total_step = 0
     for episode in range(1, args.episodes+1):
         episode_reward, samples = env_sampler(get_action, args.batch_size, get_value)

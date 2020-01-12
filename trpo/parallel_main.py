@@ -70,9 +70,10 @@ def run(rank, size, args):
         alg = GlobalTRPO(**trpo_args)
 
     def get_action(state):
-        state = torch.FloatTensor(state).unsqueeze(0).to(device)
-        action = actor.select_action(state)
-        return action.detach().cpu().numpy()[0]
+        with torch.no_grad():
+            state = torch.FloatTensor(state).unsqueeze(0).to(device)
+            action, _ = actor.select_action(state)
+        return action.cpu().numpy()[0]
 
     def get_value(state):
         with torch.no_grad():

@@ -48,7 +48,8 @@ class GlobalPPO(PPO):
     def update_actor(self, state, action, advantage):
         start_time = time()
         #update actor network
-        old_pi = self.actor.get_detach_pi(state)
+        with torch.no_grad():
+            old_pi = self.actor(state)
         log_action_probs = self.actor.get_log_prob(state, action)
         old_log_action_probs = log_action_probs.clone().detach()
         actor_loss = 0.0

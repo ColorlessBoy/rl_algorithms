@@ -141,7 +141,8 @@ class TRPO(object):
 
         loss_grad = self.get_actor_loss_grad(state, action, advantage)
 
-        self.pi_old = self.actor.get_detach_pi(state)
+        with torch.no_grad():
+            self.pi_old = self.actor(state)
 
         def get_Hx(x):
             kl_loss = self.get_kl_loss(state)
