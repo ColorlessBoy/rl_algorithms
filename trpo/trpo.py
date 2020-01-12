@@ -78,6 +78,7 @@ class TRPO(object):
 
     def get_actor_loss_grad(self, state, action, advantage):
         log_prob_action = self.actor.get_log_prob(state, action)
+        print(log_prob_action)
         self.log_prob_action_old = log_prob_action.clone().detach()
         self.actor_loss_old = self.get_actor_loss(advantage, log_prob_action, self.log_prob_action_old)
 

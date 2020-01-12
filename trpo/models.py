@@ -71,7 +71,7 @@ class PolicyNetwork(Network):
     def get_log_prob(self, state, action):
         pi = self.forward(state)
         # y = atanh(action)
-        y = 0.5 * torch.log((1 + action)/(1 - action + self.epsilon))
+        y = 0.5 * (torch.log(1 + action + self.epsilon) - torch.log(1 - action + self.epsilon))
         log_pi_action = pi.log_prob(y) - torch.log(1 - action.pow(2) + self.epsilon)
         return log_pi_action.sum(axis=1, keepdim=True)
 
