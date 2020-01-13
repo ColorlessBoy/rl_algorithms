@@ -17,8 +17,8 @@ class PPO(object):
                 device=torch.device("cpu"),
                 pi_lr=3e-4,
                 v_lr=1e-3):
-        self.actor = actor.to(device)
-        self.critic = critic.to(device)
+        self.actor = actor
+        self.critic = critic
         self.actor_optim = Adam(self.actor.parameters(), lr=pi_lr)
         self.critic_optim = Adam(self.critic.parameters(), lr=v_lr)
         self.clip = clip
@@ -69,7 +69,8 @@ class PPO(object):
     def update_actor(self, state, action, advantage):
         start_time = time()
         #update actor network
-        old_pi = self.actor.get_detach_pi(state)
+        with torch.no_grad():
+            old_pi = self.actor(state)
         log_action_probs = self.actor.get_log_prob(state, action)
         old_log_action_probs = log_action_probs.clone().detach()
         actor_loss = 0.0
@@ -83,7 +84,8 @@ class PPO(object):
             actor_loss.backward()
             self.actor_optim.step()
 
-            pi = self.actor.get_detach_pi(state)
+            with torch.no_grad():
+                pi = self.actor(state)
             kl = kl_divergence(old_pi, pi).sum(axis=1).mean()
             if kl > self.target_kl:
                 print("Upto target_kl at Step {}".format(i))

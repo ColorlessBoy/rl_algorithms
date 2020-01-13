@@ -5,6 +5,7 @@ do
     for algo in local_trpo dmtrpo global_trpo ;
     do
         python parallel_main.py --env_name $env_name \
+                                --alg $algo \
                                 --agent 12 \
                                 --device cuda
     done

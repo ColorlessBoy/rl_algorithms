@@ -34,8 +34,8 @@ class TRPO(object):
                 damping=0.1,
                 max_kl=0.01,
                 device=torch.device("cpu")):
-        self.actor = actor.to(device)
-        self.critic = critic.to(device)
+        self.actor = actor
+        self.critic = critic
         self.critic_optim = Adam(self.critic.parameters(), value_lr)
         self.value_steps_per_update = value_steps_per_update
         self.cg_steps = cg_steps
@@ -110,7 +110,7 @@ class TRPO(object):
             actor_loss = 0.0
             prev_params = get_flat_params_from(self.actor)
             # Line search:
-            alpha = 2
+            alpha = 1
             for i in range(steps):
                 alpha *= 0.9
                 new_params = prev_params + alpha * fullstep
@@ -141,7 +141,8 @@ class TRPO(object):
 
         loss_grad = self.get_actor_loss_grad(state, action, advantage)
 
-        self.pi_old = self.actor.get_detach_pi(state)
+        with torch.no_grad():
+            self.pi_old = self.actor(state)
 
         def get_Hx(x):
             kl_loss = self.get_kl_loss(state)
