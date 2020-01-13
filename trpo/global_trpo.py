@@ -6,6 +6,22 @@ from dmtrpo import DMTRPO
 
 from time import time
 
+def get_flat_params_from(model):
+    params = []
+    for param in model.parameters():
+        params.append(param.data.view(-1))
+
+    flat_params = torch.cat(params)
+    return flat_params
+
+def set_flat_params_to(model, flat_params):
+    prev_ind = 0
+    for param in model.parameters():
+        flat_size = param.numel()
+        param.data.copy_(
+            flat_params[prev_ind:prev_ind + flat_size].view(param.size()))
+        prev_ind += flat_size
+
 class GlobalTRPO(DMTRPO):
     def __init__(self, 
                 actor, 
@@ -31,7 +47,6 @@ class GlobalTRPO(DMTRPO):
             dist.reduce(param.grad.data, dst=0)
             if rank == 0:
                 param.grad.data /= size
-
     
     def cg(self, A, b, iters=10, accuracy=1e-10):
         start_time = time()
@@ -55,6 +70,30 @@ class GlobalTRPO(DMTRPO):
             g += alpha * Ad
         print("GlobalTRPO's cg() uses {}s.".format(time() - start_time))
         return x
+    
+    def linesearch(self, state, action, advantage, fullstep, steps=10):
+        with torch.no_grad():
+            actor_loss = 0.0
+            prev_params = get_flat_params_from(self.actor)
+            # Line search:
+            alpha = 1
+            self.average_variables(self.actor_loss_old)
+            for i in range(steps):
+                alpha *= 0.9
+                new_params = prev_params + alpha * fullstep
+                set_flat_params_to(self.actor, new_params)
+                kl_loss = self.get_kl_loss(state)
+                log_prob_action = self.actor.get_log_prob(state, action)
+                actor_loss = self.get_actor_loss(advantage, log_prob_action, self.log_prob_action_old)
+                
+                self.average_variables(kl_loss)
+                self.average_variables(actor_loss)
+                if actor_loss > self.actor_loss_old and kl_loss < self.max_kl:
+                    print("linesearch successes at step {}".format(i))
+                    return actor_loss
+            set_flat_params_to(self.actor, prev_params)
+            print("linesearch failed")
+        return actor_loss
 
     def update_critic(self, state, target_value):
         start_time = time()

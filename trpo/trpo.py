@@ -78,7 +78,6 @@ class TRPO(object):
 
     def get_actor_loss_grad(self, state, action, advantage):
         log_prob_action = self.actor.get_log_prob(state, action)
-        print(log_prob_action)
         self.log_prob_action_old = log_prob_action.clone().detach()
         self.actor_loss_old = self.get_actor_loss(advantage, log_prob_action, self.log_prob_action_old)
 
@@ -111,7 +110,7 @@ class TRPO(object):
             actor_loss = 0.0
             prev_params = get_flat_params_from(self.actor)
             # Line search:
-            alpha = 2
+            alpha = 1
             for i in range(steps):
                 alpha *= 0.9
                 new_params = prev_params + alpha * fullstep

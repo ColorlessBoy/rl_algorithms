@@ -37,8 +37,8 @@ def main(args):
     # 2.Create actor, critic, EnvSampler() and PPO.
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.shape[0]
-    actor = PolicyNetwork(state_size, action_size, hidden_sizes=args.hidden_sizes)
-    critic = ValueNetwork(state_size, hidden_sizes=args.hidden_sizes)
+    actor = PolicyNetwork(state_size, action_size, hidden_sizes=args.hidden_sizes).to(device)
+    critic = ValueNetwork(state_size, hidden_sizes=args.hidden_sizes).to(device)
     env_sampler = EnvSampler(env, args.max_episode_step)
     ppo = PPO(actor, 
               critic, 

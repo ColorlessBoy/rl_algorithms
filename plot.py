@@ -67,7 +67,8 @@ plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 
 #plot
 for alg in alg_list:
-    plt.plot(alg_pd_dict[alg]['step'], alg_pd_dict[alg]['reward_smooth'], label=alg)
+    alg_label = 'hmtrpo' if alg == 'dmtrpo' else alg
+    plt.plot(alg_pd_dict[alg]['step'], alg_pd_dict[alg]['reward_smooth'], label=alg_label)
     plt.fill_between(alg_pd_dict[alg]['step'], alg_pd_dict[alg]["low"] , alg_pd_dict[alg]["high"], alpha=0.2)
 
 ax = plt.subplot(111)

@@ -39,27 +39,19 @@ class PolicyNetwork(Network):
                  activation=torch.relu, output_activation=torch.tanh, 
                  init_std=1.0, max_log_std=2, min_log_std=-20, epsilon=1e-6):
 
-        super(PolicyNetwork, self).__init__(input_size, hidden_sizes[-1], hidden_sizes[-1:], activation, activation)
+        super(PolicyNetwork, self).__init__(input_size, output_size, hidden_sizes, activation, output_activation)
 
-        self.log_std_bias = 0.5 * (max_log_std + min_log_std)
-        self.log_std_scale = 0.5 * (max_log_std - min_log_std)
-        self.output_activation = output_activation
+        self.max_log_std = max_log_std
+        self.min_log_std = min_log_std
         self.epsilon = epsilon
 
-        self.mean_layers = nn.Linear(hidden_sizes[-1], output_size)
-        self.std_layers = nn.Linear(hidden_sizes[-1], output_size)
+        self.log_std = nn.Parameter(torch.full((1, output_size), math.log(init_std)))
         self.apply(_weight_init)
 
-    def forward(self, x):
-        x = super(PolicyNetwork, self).forward(x)
-        mean = self.mean_layers(x)
-        log_std = self.std_layers(x)
-        if self.output_activation:
-            mean = self.output_activation(mean)
-        # Spinningup method.
-        log_std = torch.tanh(log_std)
-        log_std = self.log_std_bias + self.log_std_scale * log_std
-        return Normal(loc=mean, scale=log_std.exp())
+    def forward(self, state):
+        mean = super(PolicyNetwork, self).forward(state)
+        std = self.log_std.clamp(self.min_log_std, self.max_log_std).exp()
+        return Normal(loc=mean, scale=std)
     
     def select_action(self, state):
         pi = self.forward(state)
@@ -67,11 +59,11 @@ class PolicyNetwork(Network):
         action = torch.tanh(y)
         log_pi_action = pi.log_prob(y) - torch.log(1 - action.pow(2) + self.epsilon)
         return action, log_pi_action.sum(axis=1, keepdim=True)
-
+    
     def get_log_prob(self, state, action):
         pi = self.forward(state)
         # y = atanh(action)
-        y = 0.5 * torch.log((1 + action)/(1 - action + self.epsilon))
+        y = 0.5 * (torch.log(1 + action + self.epsilon) - torch.log(1 - action + self.epsilon))
         log_pi_action = pi.log_prob(y) - torch.log(1 - action.pow(2) + self.epsilon)
         return log_pi_action.sum(axis=1, keepdim=True)
 
@@ -86,16 +78,6 @@ class ValueNetwork(Network):
                 activation=torch.relu, output_activation=None):
         super(ValueNetwork, self).__init__(input_size, 1, hidden_sizes,
                                             activation, output_activation)
-
-class QNetwork(Network):
-    def __init__(self, state_size, action_size, hidden_sizes=(64,64), \
-                activation=torch.relu, output_activation=None):
-        super(QNetwork, self).__init__(state_size + action_size, 1, hidden_sizes, 
-                                        activation, output_activation)
-    
-    def forward(self, state, action):
-        x = torch.cat([state, action], 1)
-        return super(QNetwork, self).forward(x)
 
 if __name__ == '__main__':
     state_size = 10
