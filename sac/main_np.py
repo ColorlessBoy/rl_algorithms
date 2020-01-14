@@ -9,7 +9,7 @@ import random
 
 from models import PolicyNetwork, ValueNetwork, QNetwork
 from utils import EnvSampler, hard_update
-from sac import SAC
+from sacnp import SACNP
 
 # The properties of args:
 # 1. env_name (default: HalfCheetah-v2)
@@ -49,8 +49,8 @@ def run(args):
     hard_update(vt_net, v_net)
 
     env_sampler = EnvSampler(env, args.max_episode_length)
-    alg = SAC(v_net, q1_net, q2_net, pi_net, vt_net,
-                gamma=0.99, alpha=0.2,
+    alg = SACNP(v_net, q1_net, q2_net, pi_net, vt_net,
+                gamma=0.99, alpha=0.2, lm=0.1,
                 v_lr=1e-3, q_lr=1e-3, pi_lr=1e-3, vt_lr = args.vt_lr,
                 device=device)
 
@@ -82,10 +82,11 @@ def run(args):
 
     trajectory = 0
     model_save_file = 'models'
-    for step in range(1, args.total_steps+1):
+    for step in range(1): # range(1, args.total_steps+1):
         done, episode_reward = env_sampler.addSample(get_action)
-        batch = env_sampler.sample(args.batch_size)
-        losses = alg.update(*batch)
+        batch1 = env_sampler.sample(args.batch_size)
+        batch2 = env_sampler.sample(args.batch_size)
+        losses = alg.update(batch1, batch2)
         if done:
             trajectory += 1
             test_reward = None
@@ -132,7 +133,7 @@ if __name__ == '__main__':
         'cuda',           # device
         (400, 300),       # hidden_size
         100,              # batch_size
-        1000000,          # total_steps
+        10000,            # total_steps
         1000,             # max_episode_length
         10000,            # start_steps
         0,                # seed
