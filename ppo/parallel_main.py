@@ -151,7 +151,7 @@ if __name__ == "__main__":
         alg_args = Args(args.alg,       # alg_name
                     args.env_name,      # env_name
                     args.device,        # device
-                    args.seed+rank,          # seed
+                    args.seed+rank,     # seed
                     (64, 64),           # hidden_sizes
                     1000,               # episodes
                     1000,               # max_episode_step

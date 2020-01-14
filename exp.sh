@@ -1,6 +1,6 @@
 #!/bin/bash
 
-for seed in 400 ; # 300 200 100 0 ;
+for seed in 0 100 200 ; # 300 400 ;
 do
     for env_name in Humanoid-v2 HumanoidStandup-v2 ;# Hopper-v2 HalfCheetah-v2 Walker2d-v2 Ant-v2 Humanoid-v2 HumanoidStandup-v2 ;
     do

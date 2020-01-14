@@ -14,8 +14,8 @@ plt.switch_backend('agg')
 parser = argparse.ArgumentParser(description='Plot experiment results')
 parser.add_argument('--alg-list', nargs='+', help='algorimthms to plot')
 parser.add_argument('--env-name', default='Hopper-v2', type=str, help='env-name')
-parser.add_argument('--num-repeat', default=1, type=int, help='num-repeat')
 parser.add_argument('--workers', default=2, type=int, help='workers')
+parser.add_argument('--exp-num', default=0, type=int, help='The number of experiment.(0 means all.)')
 
 args = parser.parse_args()
 
@@ -28,6 +28,7 @@ for i, alg in enumerate(alg_list):
     legent_name['alg{}'.format(i)] = alg
     alg_pd_dict[alg] = pd.DataFrame()
 
+start, end = 0, 1
 # load csv
 num_repeat = 1
 for alg in alg_list:
@@ -41,7 +42,13 @@ for alg in alg_list:
         path = './ppo/logs/algo_{}/env_{}/workers{}'.format(alg, env_name, args.workers)
 
     file_list = os.listdir(path)
-    num_repeat = len(file_list)
+    file_list.sort(key=lambda x:x[x.find('time'):])
+    if args.exp_num == 0:
+        start = 0
+        end = len(file_list)
+    else:
+        start = args.workers * (args.exp_num - 1)
+        end = args.workers * args.exp_num
     # only includes csvs
     for i, csv in enumerate(file_list):
         csv_path = os.path.join(path, csv)
@@ -50,7 +57,7 @@ for alg in alg_list:
             alg_pd_dict[alg]['step'] = data['step']
         alg_pd_dict[alg]['Run{}'.format(i)] = data['reward']
 
-loc_list = ['Run{}'.format(i) for i in range(num_repeat)]
+loc_list = ['Run{}'.format(i) for i in range(start, end)]
 for alg in alg_list:
     alg_pd_dict[alg]['reward_smooth'] = alg_pd_dict[alg].loc[:, loc_list].mean(1).ewm(span=3).mean()
     ci = sci.ci(alg_pd_dict[alg].loc[:, loc_list].T, alpha=0.1, statfunction=lambda x: np.average(x, axis=0))
@@ -68,6 +75,10 @@ plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
 #plot
 for alg in alg_list:
     alg_label = 'hmtrpo' if alg == 'dmtrpo' else alg
+<<<<<<< HEAD
+        
+=======
+>>>>>>> e7a50c14b8a202aa8a279cf94fd222e0845bdb06
     plt.plot(alg_pd_dict[alg]['step'], alg_pd_dict[alg]['reward_smooth'], label=alg_label)
     plt.fill_between(alg_pd_dict[alg]['step'], alg_pd_dict[alg]["low"] , alg_pd_dict[alg]["high"], alpha=0.2)
 
