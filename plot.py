@@ -42,7 +42,7 @@ for alg in alg_list:
         path = './ppo/logs/algo_{}/env_{}/workers{}'.format(alg, env_name, args.workers)
 
     file_list = os.listdir(path)
-    file_list.sort(key=lambda x:x[x.find('time'):])
+    file_list.sort(key=lambda x:x[x.find('seed'):])
     if args.exp_num == 0:
         start = 0
         end = len(file_list)
